@@ -1,12 +1,12 @@
 import type { ConnectorDefinition } from "@/lib/connectors/types";
 
-/** Web Browser connector — not implemented yet. Will eventually give the
- *  agent read access to pages for research, and later, guarded write
- *  access (form filling, navigation) once PREPARE/EXECUTE flows exist. */
-export const browserConnector: ConnectorDefinition = {
-  id: "browser",
-  name: "Web Browser",
-  category: "Browser",
-  description: "Search and read pages on the web.",
+/** GitHub connector — not implemented yet. See google/index.ts for the
+ *  pattern every connector follows once it's built. */
+export const githubConnector: ConnectorDefinition = {
+  id: "github",
+  name: "GitHub",
+  category: "Work",
+  description: "Repositories, issues, and pull requests.",
   implemented: false,
+  scopes: ["repo", "read:org"],
 };
