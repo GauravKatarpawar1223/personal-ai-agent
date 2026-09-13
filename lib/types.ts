@@ -1,12 +1,14 @@
 /**
  * Core data model for Personal AI Agent.
  *
- * These types describe the shape of the product's data whether it is
- * currently backed by in-memory demo state (Phase 1) or, later, by
- * Supabase tables. Keep this file the single source of truth for shape —
- * UI components and the demo data in lib/demo-data.ts both import from here
- * so the eventual swap to real persistence only touches data-fetching code,
- * never component code.
+ * These types describe the shape of the product's data now that it's
+ * backed by real Supabase tables (see supabase/migrations/0001_init.sql
+ * and lib/data/*.ts). Keep this file the single source of truth for
+ * shape — UI components import from here rather than from whichever
+ * data-access file they happen to call, so a future schema change only
+ * touches lib/data/*.ts, never component code. A few settings (AI
+ * response style, confirmation preferences) are still session-only
+ * local state rather than a persisted column — see components/settings.
  */
 
 export type ID = string;
