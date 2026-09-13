@@ -7,9 +7,10 @@ import { StatusChip } from "@/components/ui/StatusChip";
  *   Understanding request → Planning → Using tool → Completed
  *
  * Purely presentational — the steps and their statuses are owned by
- * whatever is driving the run (Phase 1: /lib/agent/runAgentDemo.ts,
- * later: the real agent runtime). Always render the "Demo" chip when
- * `isDemo` is true so no one mistakes this for a real tool call.
+ * whatever is driving the run (app/api/agent/chat/route.ts, surfaced
+ * through components/agent/AgentWorkspace.tsx). Always render the
+ * "Demo" chip when `isDemo` is true; Phase 2's real run passes
+ * `isDemo={false}` since it reflects an actual request/response.
  */
 export function AgentAction({
   steps,

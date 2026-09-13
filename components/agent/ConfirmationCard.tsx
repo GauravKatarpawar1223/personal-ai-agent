@@ -28,7 +28,7 @@ interface ConfirmationCardProps {
 /**
  * Any tool with permissionLevel "execute" routes through this component
  * before it can run — see requiresConfirmation() in
- * /lib/agent/permissions.ts. Phase 1 never actually performs the
+ * /lib/agent/permissions.ts. Phase 2 still never actually performs the
  * underlying action: Approve only records the decision locally.
  */
 export function ConfirmationCard({
