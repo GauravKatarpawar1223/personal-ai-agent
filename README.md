@@ -1,264 +1,312 @@
-# Personal AI Agent — Phase 1
+# Personal AI Agent — Phase 2
 
 > "Tell me what you need. I'll help get it done."
 
-Personal AI Agent is the foundation for a personal AI operating system: a
-single place where you'll eventually be able to tell an AI what you need —
-by text or voice — and have it use tools you've authorized (email,
-calendar, files, messaging, browser, and more) to get it done.
+Personal AI Agent is the foundation for a personal AI operating system.
+**Phase 1** was the complete frontend and architecture, with no external
+service actually connected. **Phase 2** (this version) wires that
+architecture up to real infrastructure: real accounts via Supabase Auth,
+a real Postgres database, and a real AI agent that can search the web.
 
-**This repository is Phase 1.** It is the complete frontend, application
-architecture, navigation, and reusable components for that product —
-built so real connectors can be added later without rebuilding the UI.
-**No external service is actually connected yet.** Every place that would
-eventually talk to Gmail, Calendar, WhatsApp, GitHub, or any other
-provider clearly says "Connect" or "Coming soon" instead of pretending to
-work.
+Nothing in this repo fakes a success state. If something isn't
+configured — no `GEMINI_API_KEY`, no Supabase project — the app shows
+a real error explaining what's missing, not a scripted "it worked."
 
 ---
 
-## What's in Phase 1
+## What's real in Phase 2
 
-- **Landing page** — product introduction, honest about what is and isn't
-  built yet.
-- **Login page** — the complete sign-in UI (Google button, email/password,
-  forgot/create account), wired to local component state only. No
-  authentication provider is connected, and the screen says so.
-- **Agent workspace** (`/agent`) — the core screen: a conversation UI,
-  quick actions, a step-by-step `AgentAction` progress component, and a
-  `ConfirmationCard` component for actions that would need your approval.
-  Responses are simulated locally (see [Limitations](#known-limitations-in-phase-1)) —
-  nothing calls a real model or a real tool yet.
-- **Connections page** (`/connections`) — an integrations dashboard.
-  Nothing is shown as connected; every entry is either "Not connected"
-  (Google Workspace) or "Coming soon" (WhatsApp, Telegram, GitHub,
-  Vercel, Web Browser).
-- **Activity page** (`/activity`) — a timeline of agent actions, currently
-  backed by local demo data, structured so it can read from a real
-  database later.
-- **Settings page** (`/settings`) — Profile, AI preferences, Voice,
-  Security, and Appearance (light / dark / system theme).
-- **Responsive, accessible UI** — a sidebar on desktop that becomes a
-  bottom navigation bar on mobile, touch-friendly controls, keyboard
-  focus states, and semantic HTML throughout.
+- **Accounts.** Sign up / sign in with email + password, or "Continue
+  with Google" (once the Google provider is enabled in your Supabase
+  project — see [Setup](#setup)). Sessions are real Supabase Auth
+  sessions, refreshed by `middleware.ts` on every request.
+- **A real database.** Postgres via Supabase, with Row Level Security so
+  every table is automatically scoped to its owner. Schema in
+  `supabase/migrations/0001_init.sql`.
+- **A real AI agent.** `/api/agent/chat` calls the Google Gemini API
+  server-side with your own `GEMINI_API_KEY`, using the model's
+  built-in web search tool. Conversations and messages are saved to your
+  account and reload when you come back.
+- **A real activity log.** Every answer and every web search the agent
+  runs is written to `activity_log` and shown on the Activity page.
+- **Real voice input.** The mic button in the agent workspace uses the
+  browser's native SpeechRecognition API — no external transcription
+  service, no key required. Works in Chrome and Edge; other browsers see
+  an honest "not supported" message instead of a dead button.
+- **A route-protecting middleware** that keeps `/agent`, `/connections`,
+  `/activity`, and `/settings` behind sign-in.
+
+## What's still not connected (on purpose)
+
+- **Gmail, Google Calendar, Google Drive, Google Tasks** — these need
+  their own OAuth app (separate from "Continue with Google" sign-in,
+  which only needs the Google provider turned on in Supabase). Not
+  implemented; the Connections page says so.
+- **WhatsApp, Telegram, GitHub, Vercel** — no connector exists yet.
+- **Sending, booking, purchasing, or deleting anything for real.** The
+  `ConfirmationCard` approval flow still only demos what approval would
+  look like — there's no connected tool behind it that could actually
+  send an email or make a booking, so approving one never does anything
+  beyond recording the demo state. It says so explicitly.
+- **AI response-style and confirmation preferences** on the Settings
+  page apply to the current session only; they aren't saved to your
+  account yet (your profile name *is* saved — see the schema).
+- **Voice responses** (text-to-speech) — not implemented.
+
+---
 
 ## Tech stack
 
-- [Next.js](https://nextjs.org) (App Router) + TypeScript
-- Tailwind CSS, with a small custom design-token system (see
-  `app/globals.css` and `tailwind.config.ts`)
-- No UI/icon/animation libraries — icons are hand-written inline SVGs in
-  `components/ui/Icons.tsx`, kept deliberately dependency-light per the
-  Phase 1 brief.
+Everything from Phase 1, plus:
+
+- [`@supabase/supabase-js`](https://supabase.com/docs/reference/javascript) +
+  [`@supabase/ssr`](https://supabase.com/docs/guides/auth/server-side/nextjs) —
+  Supabase client/server/middleware helpers for the Next.js App Router
+- Direct `fetch` calls to the Gemini API (no SDK dependency,
+  consistent with the "no unnecessary libraries" brief) — see
+  `app/api/agent/chat/route.ts`
 
 ---
 
-## Running it locally
+## Setup
+
+### 1. Install dependencies
 
 ```bash
 npm install
+```
+
+### 2. Create your Supabase project
+
+If you haven't already, create one at [database.new](https://database.new).
+
+### 3. Run the database migration
+
+Open your project's **SQL Editor** in the Supabase dashboard, paste the
+contents of `supabase/migrations/0001_init.sql`, and run it. (Or, if you
+use the Supabase CLI: `supabase db push`.) This creates every table the
+app needs, all with Row Level Security already enabled.
+
+### 4. Enable Google sign-in (optional)
+
+In your Supabase project: **Authentication → Providers → Google**, turn
+it on, and follow Supabase's prompt to add a Google OAuth client ID and
+secret *to Supabase* (not to this app). This is only for sign-in — it
+does not give the agent access to Gmail or Calendar data.
+
+### 5. Set environment variables
+
+Copy `.env.example` to `.env.local`:
+
+```bash
+cp .env.example .env.local
+```
+
+Fill in, at minimum:
+
+| Variable | Where to find it |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Settings → API Keys (or the legacy `anon` key — both work, see below) |
+| `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+
+> **Legacy keys still work.** If your Supabase project predates the
+> publishable/secret key rollout and only shows `anon` / `service_role`
+> keys, put the `anon` key in `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+> anyway — Supabase's client libraries accept either key format
+> transparently.
+
+Without `GEMINI_API_KEY` set, the app still runs — the agent
+workspace will just show a real "AI provider isn't configured" error
+instead of a reply, rather than pretending to work.
+
+### 6. Run it
+
+```bash
 npm run dev
 ```
 
-Then open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000), create an account,
+and you should land in the agent workspace.
 
-Other scripts:
+Other scripts are unchanged from Phase 1: `npm run build`, `npm run
+start`, `npm run lint`, `npm run typecheck`.
 
-```bash
-npm run build      # production build
-npm run start      # run the production build locally
-npm run lint       # ESLint
-npm run typecheck  # TypeScript, no emit
-```
-
-> This project was authored in an environment without package-registry
-> access, so `npm install` / `npm run build` have not been run against the
-> real npm registry as part of building it. The dependency list in
-> `package.json` is intentionally small (Next, React, Tailwind, and their
-> types/tooling — nothing else), and the code was written and reviewed
-> carefully against Next.js 14 / TypeScript conventions. Please run
-> `npm install && npm run build` as your first step after cloning, and
-> open an issue-to-self (or just fix forward) if anything surfaces —
-> see [Known limitations](#known-limitations-in-phase-1).
+> As with Phase 1, this project was authored in an environment without
+> package-registry access, so these commands have not been run against
+> the real npm registry / a real Supabase project as part of writing
+> this code. See [Verification](#verification-notes) for exactly what
+> was checked instead, and please run `npm install && npm run build`
+> yourself as the first step.
 
 ---
 
-## Environment variables
+## Architecture
 
-Phase 1 doesn't read any environment variables yet — there's nothing
-live to configure. `.env.example` documents the variables later phases
-will need, so the contract is stable before the code that uses it exists:
-
-| Variable | Used for |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase browser client (auth + database) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase server-only client — never exposed to the browser |
-| `NEXT_PUBLIC_APP_URL` | OAuth redirect base URL |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI` | Google Workspace connector (Gmail, Calendar, Drive, Tasks) |
-| `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` | GitHub connector |
-| `ANTHROPIC_API_KEY` | Server-side model calls for the real agent runtime |
-
-Copy `.env.example` to `.env.local` when you start wiring up a real
-provider. Never commit `.env.local`.
-
----
-
-## Known limitations in Phase 1
-
-Being explicit about this is intentional — the brief for this project
-asked for no fake integrations, so here is exactly what is and isn't
-real:
-
-- **No authentication.** The login screen is a complete, working UI, but
-  "Sign in", "Continue with Google", "Create account", and "Forgot
-  password" only show an inline notice explaining that auth isn't
-  connected. There is a "Preview the agent workspace as a demo" link
-  instead of a real signed-in session.
-- **No connected tools or accounts.** Every connector on `/connections`
-  is either "Not connected" or "Coming soon." Clicking "Connect" explains
-  what's still needed (OAuth credentials + Supabase) rather than
-  pretending to connect.
-- **The agent workspace is a local simulation.** Sending a message plays
-  a scripted `AgentAction` sequence (Understanding → Planning → Using a
-  tool → Completed) and then replies that it doesn't have the relevant
-  tool connected yet. This is clearly labeled "Demo" in the UI. No
-  request leaves the browser, no model is called.
-- **The `ConfirmationCard` approval flow is a demo.** Approving a
-  simulated "send an email" example never sends anything — the card
-  says so explicitly once resolved.
-- **Voice input/output, avatar upload, and password reset** are visibly
-  present in the UI (per the brief) but marked "Coming soon" and
-  disabled — they don't silently do nothing, they say so.
-- **Data doesn't persist.** Profile edits in Settings, theme preference
-  aside, live only in React state for the current page session. Theme
-  preference is the one exception and is stored in `localStorage`,
-  since it's a UI preference, not a credential.
-- **Not build-verified against the npm registry.** See the note in
-  [Running it locally](#running-it-locally).
-
-## What's genuinely working
-
-- Full navigation across all six screens, on desktop and mobile.
-- Light / dark / system theme, applied without a flash on load.
-- The `AgentAction` and `ConfirmationCard` components are real,
-  reusable, and typed against the same interfaces (`AgentActionStep`,
-  `PermissionRequest`) the future real agent runtime will populate.
-- The chat UI, quick actions, and input box are fully interactive.
-
----
-
-## Architecture, for the phases after this one
-
-### Folder structure
+### Supabase client/server layout
 
 ```
-app/                      Routes (App Router)
-  page.tsx                 Landing
-  login/page.tsx            Login
-  agent/page.tsx             Agent workspace (core screen)
-  connections/page.tsx        Connections dashboard
-  activity/page.tsx            Activity timeline
-  settings/page.tsx             Settings
-
-components/
-  layout/                  Sidebar, mobile nav, app shell, theme
-  landing/                 Landing page sections
-  agent/                   Chat UI, AgentAction, ConfirmationCard, etc.
-  connections/             ConnectionCard
-  activity/                ActivityItem
-  settings/                SettingsSection
-  ui/                      Button, StatusChip, Toggle, Icons — shared primitives
-
-lib/
-  types.ts                 Shared data model (User, Conversation, Message,
-                            AgentRun, Tool, ToolExecution, Connection,
-                            ActivityLog, PermissionRequest, ...)
-  demo-data.ts              Local demo data, shaped like future DB rows
-  agent/
-    tools.ts                 Tool registry (catalog of future capabilities)
-    permissions.ts            READ / PREPARE / EXECUTE permission model
-    runAgentDemo.ts            Local-only demo run simulator
-  connectors/
-    types.ts                  Shared ConnectorDefinition contract
-    google/, github/, browser/  One folder per provider — currently
-                                 metadata only, no request logic
-  auth/
-    session.ts                Auth contract to swap for Supabase Auth
-  database/
-    client.ts                 Where the future Supabase client(s) get built
+lib/supabase/
+  client.ts       Browser client (Client Components) — publishable key only
+  server.ts       Server client (Server Components, Server Actions,
+                  Route Handlers) — reads/writes the session via cookies
+  middleware.ts   updateSession(): refreshes the session and redirects
+                  signed-out visitors away from protected pages
+middleware.ts     Root Next.js middleware, wires up updateSession()
 ```
 
-### Agent architecture
+Every table access goes through the server client and is scoped by Row
+Level Security — there is no separate "admin" client anywhere in the
+app. `SUPABASE_SECRET_KEY` is documented in `.env.example` for a future
+phase that needs to bypass RLS, but nothing reads it yet.
 
-Every future capability is modeled as a `Tool` (`lib/types.ts`):
+### Auth flow
 
-```ts
-interface Tool {
-  id: string;
-  name: string;
-  description: string;
-  connectorId: string;
-  permissionLevel: "read" | "prepare" | "execute";
-  inputSchema: Record<string, unknown>;
-  available: boolean;
-}
+- **Email/password and Google OAuth** both start from `app/login/page.tsx`
+  (a Client Component using `lib/supabase/client.ts`).
+- Google OAuth redirects through `app/auth/callback/route.ts`, which
+  exchanges the code for a session server-side.
+- `lib/auth/session.ts` exports `getCurrentUser()` — the one place that
+  turns a session into the app's `User` type (joining in the `profiles`
+  row for display name/avatar). Server Components call this directly;
+  nothing client-side needs to re-implement it.
+- `lib/actions/auth.ts` and `lib/actions/profile.ts` are Server Actions
+  for signing out and updating the profile name — called directly from
+  Client Components (`Sidebar`, `SettingsForm`) with no separate API
+  route needed.
+
+### Data layer
+
+```
+lib/data/
+  conversations.ts   list/create conversations, list/insert messages
+  activity.ts        list/log activity entries
+  connections.ts     merges lib/connectors/catalog.ts (static provider
+                     metadata) with the user's real `connections` rows
 ```
 
-`permissionLevel` drives the UI directly: `execute`-level tools always
-route through `ConfirmationCard` before anything happens
-(`requiresConfirmation()` in `lib/agent/permissions.ts`). `read` and
-`prepare` tools can run without interrupting the user.
+Every function takes an already-constructed Supabase client so callers
+control which client (and therefore which request's cookies) is used —
+these files never construct their own client.
+
+### The real agent: `app/api/agent/chat/route.ts`
+
+1. Authenticates the caller via the server Supabase client — a request
+   with no valid session gets a real `401`, not a demo response.
+2. Creates a conversation row if none was passed in, and saves the
+   user's message.
+3. Sends the recent message history to the Gemini API with
+   the model's server-side web search tool enabled.
+4. Saves the assistant's reply and logs one `activity_log` row per
+   request — `"completed"` on success, `"failed"` with a descriptive
+   `action` on any error (network failure, non-2xx from Gemini, empty
+   reply). Nothing is logged as completed unless it actually completed.
+5. Returns the saved message (plus whether web search was used) to the
+   client, which is the only place `components/agent/AgentWorkspace.tsx`
+   gets its data — there's no local simulation left in Phase 2.
+
+Check [ai.google.dev/gemini-api/docs](https://ai.google.dev/gemini-api/docs) for
+the current model name and the current Google Search grounding tool shape
+before relying on this in production; the model name is a dated
+identifier (currently `gemini-3.7-flash` in this codebase) that
+Google revises over time.
+
+### Tool registry & permissions (unchanged model, now partly real)
+
+`lib/agent/tools.ts` still defines every tool as `read` / `prepare` /
+`execute` (see `lib/agent/permissions.ts`). In Phase 2, `web.research`
+is the first tool with `available: true` — it's invoked automatically
+by the model, not through a separate manual call path. Every other tool
+stays `available: false` until its connector is actually built.
 
 ### Adding a real connector later
 
-Each connector is an independent module under `lib/connectors/<name>/`.
-To make one real:
-
-1. Add its OAuth credentials to `.env.local` (see the table above).
-2. Implement the OAuth exchange and API calls **server-side** — a route
-   handler or server action, never in a client component.
-3. Flip `implemented: true` on its `ConnectorDefinition` and register its
-   tools in `lib/agent/tools.ts` with `available: true`.
-4. Update `lib/demo-data.ts` (or, once Supabase is connected, the real
-   `connections` table) to reflect the real connection state.
-
-No other file needs to change — the Connections page, the agent
-workspace, and `ConfirmationCard` all read from these shared types.
-
-### Adding Supabase
-
-`lib/database/client.ts` is intentionally empty right now. When Supabase
-is introduced:
-
-- Build the browser client there using `NEXT_PUBLIC_SUPABASE_URL` /
-  `NEXT_PUBLIC_SUPABASE_ANON_KEY`, gated by row-level security.
-- Build a server-only client using `SUPABASE_SERVICE_ROLE_KEY`, and only
-  ever construct it inside server actions or route handlers — that key
-  must never reach the client bundle.
-- Swap `lib/demo-data.ts` reads for real queries; the component props
-  don't need to change since they're already typed against
-  `lib/types.ts`.
+Unchanged from Phase 1 — see `lib/connectors/<name>/` for the per-provider
+metadata pattern and `lib/connectors/catalog.ts` for where a new entry
+gets listed. The only new piece is that "connected" now means a row
+exists in the real `connections` table for that user, not a hardcoded
+flag.
 
 ### Security notes
 
 - No API keys, OAuth secrets, or tokens are hardcoded anywhere in this
-  repo. `.env.example` contains only empty placeholders.
-- `lib/auth/session.ts` deliberately avoids `localStorage` for anything
-  session-related — real session state belongs in an httpOnly cookie
-  managed by Supabase Auth.
-- Service-role/database secrets must only ever be read server-side (see
-  `lib/database/client.ts`).
+  repo — `.env.example` contains only empty placeholders.
+- `GEMINI_API_KEY` is read only inside a Route Handler
+  (`app/api/agent/chat/route.ts`), which runs exclusively on the server —
+  it's never sent to the browser.
+- Row Level Security means even a leaked publishable key can't read
+  another user's rows; it can only act as whatever user is actually
+  signed in.
+- `SUPABASE_SECRET_KEY` (documented, not yet used) must only ever be
+  read server-side, and never inside a file that's part of the client
+  bundle.
+
+---
+
+## Verification notes
+
+This environment has no access to the npm registry or to a live
+Supabase/Gemini project, so the following could not be run directly.
+Here's what was checked instead, and what's on you to confirm:
+
+- **Not run:** `npm install`, `npm run build`, `npm run dev` against
+  real infrastructure; the actual Supabase migration; a real sign-up →
+  chat → activity-log round trip.
+- **Checked:** every `.ts`/`.tsx` file compiles with no syntax errors
+  and no undefined-name/duplicate-identifier errors under a relaxed
+  `tsc` pass (see the project's build history for the exact command);
+  every import resolves to a real exported symbol; Server/Client
+  Component boundaries were audited by hand (no Client Component
+  imports a module that calls `cookies()` or `next/headers`); RLS
+  policies were written so every table's `insert`/`select`/`update` is
+  scoped to `auth.uid()`; grepped for hardcoded secrets and leftover
+  debug statements (none found).
+- **Please do after cloning:** run the migration, set real env vars,
+  `npm install && npm run build`, and actually sign up once before
+  trusting the deploy — a live Supabase/Gemini round trip is the one
+  thing that genuinely can't be verified without network access.
+
+---
+
+## Deploying
+
+### GitHub
+
+```bash
+git init
+git add .
+git commit -m "Phase 2: Supabase, real auth, real AI agent"
+git branch -M main
+git remote add origin https://github.com/<your-username>/<repo-name>.git
+git push -u origin main
+```
+
+### Vercel
+
+1. **Add New → Project**, import the repo. Framework preset auto-detects
+   Next.js — leave the defaults.
+2. Add environment variables in **Project → Settings → Environment
+   Variables**: `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `GEMINI_API_KEY`, and
+   `NEXT_PUBLIC_APP_URL` (set this to your Vercel deployment URL, e.g.
+   `https://your-app.vercel.app`).
+3. In Supabase, add your Vercel URL as a **Redirect URL**
+   (Authentication → URL Configuration) — e.g.
+   `https://your-app.vercel.app/auth/callback` — or Google sign-in and
+   email confirmation links will bounce back to `localhost`.
+4. Deploy.
+5. Run the SQL migration against this same Supabase project if you
+   haven't already (one project can back both local dev and production —
+   or create a separate Supabase project for production and run the
+   migration there too).
 
 ---
 
 ## Roadmap (not built yet — for context only)
 
-- **V1 — AI Work Assistant:** Gmail, Calendar, Drive, Tasks, web
-  research, browser.
+- **V1 — AI Work Assistant:** Gmail, Calendar, Drive, Tasks, richer web
+  research, browser actions beyond search.
 - **V2 — Multi-app Agent:** more connectors, multi-step workflows,
-  voice, richer browser actions.
+  voice responses, richer browser actions.
 - **V3 — Personal AI OS:** shopping assistance, booking, communication,
   an Android companion, deeper computer interaction.
-
-Only the Phase 1 foundation described above is implemented in this
-repository.
