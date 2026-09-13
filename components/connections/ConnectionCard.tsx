@@ -58,8 +58,7 @@ export function ConnectionCard({ connection }: { connection: Connection }) {
             </Button>
             {notice && (
               <p className="mt-2 text-xs text-ink-faint leading-relaxed">
-                Requires Google OAuth credentials and Supabase to be configured — see the
-                README. Nothing is connected yet.
+                {connectNotice(connection.providerId)}
               </p>
             )}
           </>
@@ -72,6 +71,13 @@ export function ConnectionCard({ connection }: { connection: Connection }) {
       </div>
     </div>
   );
+}
+
+function connectNotice(providerId: string): string {
+  if (providerId === "browser") {
+    return "The server isn't configured with an AI provider key yet (GEMINI_API_KEY) — see the README. Nothing is connected yet.";
+  }
+  return "Needs its own OAuth app credentials for data access (separate from Google sign-in) — see the README's connector section. Nothing is connected yet.";
 }
 
 function ConnectionStatusChip({ status }: { status: Connection["status"] }) {
