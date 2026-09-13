@@ -65,7 +65,11 @@ export const TOOL_REGISTRY: Tool[] = [
     connectorId: "browser",
     permissionLevel: "read",
     inputSchema: { query: "string" },
-    available: false,
+    // Real in Phase 2 — invoked automatically by the model provider's
+    // own web search tool inside /api/agent/chat/route.ts whenever it
+    // decides a request needs current information. There's no separate
+    // manual invocation path for it.
+    available: true,
   },
 ];
 
