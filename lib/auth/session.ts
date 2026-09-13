@@ -1,32 +1,35 @@
+import { createClient } from "@/lib/supabase/server";
 import type { User } from "@/lib/types";
 
 /**
- * Auth scaffold
- * -------------
- * Phase 1 has no real authentication provider connected. This module
- * exists so the rest of the app can import a stable `getCurrentUser()`
- * / `AuthState` contract, and swapping in Supabase Auth later only means
- * rewriting this file — no component using it should need to change.
+ * Real session lookup, backed by Supabase Auth + the `profiles` table.
+ * Server-only (uses the server Supabase client, which reads cookies via
+ * next/headers) — call this from Server Components, Server Actions, and
+ * Route Handlers, not from the browser.
  *
- * Intentionally NOT using localStorage or any client-side storage for
- * session data: once real auth exists, session state belongs in an
- * httpOnly cookie managed server-side by Supabase Auth, not in the
- * browser's JS-accessible storage.
+ * Uses getClaims() rather than getSession() to verify identity, per
+ * Supabase's current guidance: getClaims() validates the JWT signature
+ * every time, where getSession() trusts storage that could be spoofed.
  */
-export type AuthStatus = "signed_out" | "signed_in";
+export async function getCurrentUser(): Promise<User | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims as { sub?: string; email?: string } | undefined;
 
-export interface AuthState {
-  status: AuthStatus;
-  user: User | null;
+  if (error || !claims?.sub) return null;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("name, avatar_url, created_at")
+    .eq("id", claims.sub)
+    .maybeSingle();
+
+  const email = claims.email ?? "";
+  return {
+    id: claims.sub,
+    name: profile?.name || email.split("@")[0] || "You",
+    email,
+    avatarUrl: profile?.avatar_url ?? undefined,
+    createdAt: profile?.created_at ?? new Date().toISOString(),
+  };
 }
-
-export const SIGNED_OUT_STATE: AuthState = { status: "signed_out", user: null };
-
-/** Demo user shown only inside the Phase 1 preview workspace, never
- *  presented as a real authenticated session. */
-export const DEMO_USER: User = {
-  id: "demo-user",
-  name: "Demo Workspace",
-  email: "demo@personal-ai-agent.app",
-  createdAt: new Date().toISOString(),
-};
