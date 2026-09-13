@@ -10,7 +10,8 @@ import {
   IconPlug,
   IconSettings,
 } from "@/components/ui/Icons";
-import { DEMO_CONVERSATIONS } from "@/lib/demo-data";
+import type { Conversation } from "@/lib/types";
+import { signOutAction } from "@/lib/actions/auth";
 
 const PRIMARY_LINKS = [
   { href: "/connections", label: "Connections", icon: IconPlug },
@@ -18,7 +19,13 @@ const PRIMARY_LINKS = [
   { href: "/settings", label: "Settings", icon: IconSettings },
 ];
 
-export function Sidebar() {
+export function Sidebar({
+  conversations,
+  userEmail,
+}: {
+  conversations: Conversation[];
+  userEmail?: string;
+}) {
   const pathname = usePathname();
 
   return (
@@ -34,7 +41,7 @@ export function Sidebar() {
 
       <div className="px-3">
         <Link
-          href="/agent?new=1"
+          href="/agent"
           className="flex items-center gap-2 rounded-lg border border-line px-3 py-2.5 text-sm font-medium text-ink hover:border-ink-faint transition-colors"
         >
           <IconPlus width={16} height={16} />
@@ -46,19 +53,23 @@ export function Sidebar() {
         <p className="px-2 text-xs font-medium uppercase tracking-wide text-ink-faint mb-2">
           Conversations
         </p>
-        <ul className="space-y-0.5 mb-6">
-          {DEMO_CONVERSATIONS.map((conv) => (
-            <li key={conv.id}>
-              <Link
-                href={`/agent?c=${conv.id}`}
-                className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink-soft hover:bg-paper hover:text-ink transition-colors"
-              >
-                <IconChat width={15} height={15} className="shrink-0" />
-                <span className="truncate">{conv.title}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        {conversations.length === 0 ? (
+          <p className="px-2 text-sm text-ink-faint mb-6">No conversations yet.</p>
+        ) : (
+          <ul className="space-y-0.5 mb-6">
+            {conversations.map((conv) => (
+              <li key={conv.id}>
+                <Link
+                  href={`/agent?c=${conv.id}`}
+                  className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-ink-soft hover:bg-paper hover:text-ink transition-colors"
+                >
+                  <IconChat width={15} height={15} className="shrink-0" />
+                  <span className="truncate">{conv.title}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
 
         <ul className="space-y-0.5 border-t border-line pt-3">
           {PRIMARY_LINKS.map(({ href, label, icon: Icon }) => {
@@ -84,7 +95,21 @@ export function Sidebar() {
       </nav>
 
       <div className="px-5 py-4 border-t border-line">
-        <p className="text-xs text-ink-faint">Phase 1 · demo workspace</p>
+        {userEmail ? (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-ink-faint truncate">{userEmail}</p>
+            <form action={signOutAction}>
+              <button
+                type="submit"
+                className="text-xs font-medium text-ink-soft hover:text-ink shrink-0"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
+        ) : (
+          <p className="text-xs text-ink-faint">Phase 2</p>
+        )}
       </div>
     </aside>
   );
