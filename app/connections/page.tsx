@@ -1,6 +1,9 @@
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { ConnectionCard } from "@/components/connections/ConnectionCard";
-import { DEMO_CONNECTIONS } from "@/lib/demo-data";
+import { getCurrentUser } from "@/lib/auth/session";
+import { createClient } from "@/lib/supabase/server";
+import { getConnectionsForUser } from "@/lib/data/connections";
 import type { Connection } from "@/lib/types";
 
 const CATEGORY_ORDER: Connection["category"][] = [
@@ -10,16 +13,22 @@ const CATEGORY_ORDER: Connection["category"][] = [
   "Browser",
 ];
 
-export default function ConnectionsPage() {
-  const connected = DEMO_CONNECTIONS.filter((c) => c.status === "connected");
+export default async function ConnectionsPage() {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login?redirectTo=/connections");
+  }
+
+  const allConnections = await getConnectionsForUser(await createClient());
+  const connected = allConnections.filter((c) => c.status === "connected");
 
   return (
     <AppShell>
       <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <h1 className="font-serif text-2xl text-ink">Connections</h1>
         <p className="mt-2 text-sm text-ink-soft max-w-lg">
-          Nothing is connected until you approve it. Each connector becomes available to
-          the agent only after you connect it here.
+          Nothing is connected until you approve it. Web search is available automatically —
+          everything else needs its own connection.
         </p>
 
         <section className="mt-8">
@@ -41,7 +50,7 @@ export default function ConnectionsPage() {
         </section>
 
         {CATEGORY_ORDER.map((category) => {
-          const items = DEMO_CONNECTIONS.filter(
+          const items = allConnections.filter(
             (c) => c.category === category && c.status !== "connected"
           );
           if (items.length === 0) return null;
