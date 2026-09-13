@@ -31,8 +31,9 @@ export function Hero() {
             </Link>
           </div>
           <p className="mt-6 text-sm text-ink-faint">
-            Phase 1 preview. Connectors are being added one at a time —
-            nothing is connected until you approve it.
+            Phase 2: real sign-in and a real AI agent with web search.
+            Connectors are still being added one at a time — nothing is
+            connected until you approve it.
           </p>
         </div>
 

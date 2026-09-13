@@ -33,14 +33,14 @@ export function HowItWorks() {
 }
 
 const AVAILABLE_NOW = [
-  "A conversation workspace for research, planning, and organizing your thoughts",
-  "A clear view of what could be connected, and why",
-  "An activity log of everything the agent has done or attempted",
+  "Real sign-in, with your own account and your own data",
+  "A real AI agent that can research things for you using live web search",
+  "A conversation history and activity log that are actually yours, saved to your account",
 ];
 
 const COMING_LATER = [
   "Gmail, Google Calendar, Drive, and Tasks",
-  "WhatsApp, Telegram, GitHub, Vercel, and browser actions",
+  "WhatsApp, Telegram, GitHub, Vercel, and browser actions beyond search",
   "Multi-step workflows that chain several tools together",
 ];
 
@@ -57,7 +57,7 @@ export function CapabilitiesHonesty() {
         </p>
         <div className="mt-10 grid gap-10 sm:grid-cols-2">
           <div>
-            <p className="text-sm font-medium text-ink mb-3">Available in Phase 1</p>
+            <p className="text-sm font-medium text-ink mb-3">Available in Phase 2</p>
             <ul className="space-y-2.5">
               {AVAILABLE_NOW.map((item) => (
                 <li key={item} className="text-sm leading-relaxed text-ink-soft pl-4 relative">
@@ -88,7 +88,7 @@ export function LandingFooter() {
   return (
     <footer className="border-t border-line">
       <div className="mx-auto max-w-5xl px-5 py-8 sm:px-8 flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <p className="text-sm text-ink-faint">Personal AI Agent — Phase 1 preview.</p>
+        <p className="text-sm text-ink-faint">Personal AI Agent — Phase 2.</p>
         <p className="text-sm text-ink-faint">
           Tell me what you need. I&apos;ll help get it done.
         </p>
