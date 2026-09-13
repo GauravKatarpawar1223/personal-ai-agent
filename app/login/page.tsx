@@ -1,21 +1,97 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { IconSpark, IconGoogle, IconLock } from "@/components/ui/Icons";
 import { Button } from "@/components/ui/Button";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
-  const [notice, setNotice] = useState<string | null>(null);
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
 
-  function handleSubmit(e: FormEvent) {
+type Mode = "sign-in" | "sign-up";
+
+function LoginForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirectTo") || "/agent";
+  const urlError = searchParams.get("error");
+
+  const [mode, setMode] = useState<Mode>("sign-in");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(urlError);
+  const [noticeTone, setNoticeTone] = useState<"info" | "error">(urlError ? "error" : "info");
+
+  function showNotice(message: string, tone: "info" | "error" = "info") {
+    setNotice(message);
+    setNoticeTone(tone);
+  }
+
+  async function handleGoogle() {
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?redirectTo=${encodeURIComponent(redirectTo)}`,
+      },
+    });
+    if (error) showNotice(error.message, "error");
+    // On success the browser is redirected to Google — nothing else to do here.
+  }
+
+  async function handleEmailSubmit(e: FormEvent) {
     e.preventDefault();
-    // Phase 1 has no auth provider connected. We never pretend sign-in
-    // succeeded — see /lib/auth/session.ts for the real contract this
-    // will call once Supabase Auth is wired up.
-    setNotice(
-      "Sign-in isn't connected yet. This screen is the interface for it — Supabase Auth will power it in a later phase."
-    );
+    setPending(true);
+    setNotice(null);
+    const supabase = createClient();
+
+    if (mode === "sign-in") {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      setPending(false);
+      if (error) {
+        showNotice(error.message, "error");
+        return;
+      }
+      router.push(redirectTo);
+      router.refresh();
+      return;
+    }
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    });
+    setPending(false);
+    if (error) {
+      showNotice(error.message, "error");
+      return;
+    }
+    showNotice("Check your email to confirm your account before signing in.");
+  }
+
+  async function handleForgotPassword() {
+    if (!email) {
+      showNotice("Enter your email above first, then click Forgot password.", "error");
+      return;
+    }
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    });
+    if (error) {
+      showNotice(error.message, "error");
+      return;
+    }
+    showNotice("Password reset email sent — check your inbox.");
   }
 
   return (
@@ -31,16 +107,16 @@ export default function LoginPage() {
 
       <div className="flex-1 flex items-center justify-center px-5 py-10 sm:px-8">
         <div className="w-full max-w-sm">
-          <h1 className="font-serif text-2xl text-ink mb-1.5">Welcome back</h1>
-          <p className="text-sm text-ink-soft mb-7">Sign in to your workspace.</p>
+          <h1 className="font-serif text-2xl text-ink mb-1.5">
+            {mode === "sign-in" ? "Welcome back" : "Create your account"}
+          </h1>
+          <p className="text-sm text-ink-soft mb-7">
+            {mode === "sign-in" ? "Sign in to your workspace." : "Set a password to get started."}
+          </p>
 
           <button
             type="button"
-            onClick={() =>
-              setNotice(
-                "Google sign-in isn't connected yet — this button is UI only until Supabase Auth is configured."
-              )
-            }
+            onClick={handleGoogle}
             className="w-full inline-flex items-center justify-center gap-2.5 rounded-lg border border-line px-4 py-3 text-sm font-medium text-ink hover:border-ink-faint transition-colors min-h-[48px]"
           >
             <IconGoogle />
@@ -53,7 +129,7 @@ export default function LoginPage() {
             <span className="h-px flex-1 bg-line" />
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleEmailSubmit} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-ink mb-1.5">
                 Email
@@ -63,6 +139,8 @@ export default function LoginPage() {
                 type="email"
                 autoComplete="email"
                 required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 className="w-full rounded-lg border border-line bg-panel px-3.5 py-3 text-sm text-ink placeholder:text-ink-faint focus:border-accent min-h-[48px]"
               />
@@ -72,55 +150,79 @@ export default function LoginPage() {
                 <label htmlFor="password" className="block text-sm font-medium text-ink">
                   Password
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setNotice("Password reset isn't connected yet.")}
-                  className="text-xs font-medium text-accent hover:opacity-80"
-                >
-                  Forgot password?
-                </button>
+                {mode === "sign-in" && (
+                  <button
+                    type="button"
+                    onClick={handleForgotPassword}
+                    className="text-xs font-medium text-accent hover:opacity-80"
+                  >
+                    Forgot password?
+                  </button>
+                )}
               </div>
               <input
                 id="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
                 required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 className="w-full rounded-lg border border-line bg-panel px-3.5 py-3 text-sm text-ink placeholder:text-ink-faint focus:border-accent min-h-[48px]"
               />
             </div>
 
-            <Button type="submit" className="w-full">
-              Sign in
+            <Button type="submit" className="w-full" disabled={pending}>
+              {pending ? "Please wait…" : mode === "sign-in" ? "Sign in" : "Create account"}
             </Button>
           </form>
 
           {notice && (
             <div
               role="status"
-              className="mt-5 flex items-start gap-2 rounded-lg border border-line bg-panel px-3.5 py-3 text-sm text-ink-soft"
+              className={`mt-5 flex items-start gap-2 rounded-lg border px-3.5 py-3 text-sm ${
+                noticeTone === "error"
+                  ? "border-danger/30 bg-danger-soft text-danger"
+                  : "border-line bg-panel text-ink-soft"
+              }`}
             >
-              <IconLock width={15} height={15} className="mt-0.5 shrink-0 text-ink-faint" />
+              <IconLock width={15} height={15} className="mt-0.5 shrink-0" />
               <span>{notice}</span>
             </div>
           )}
 
           <p className="mt-7 text-center text-sm text-ink-soft">
-            New here?{" "}
-            <button
-              type="button"
-              onClick={() => setNotice("Account creation isn't connected yet.")}
-              className="font-medium text-accent hover:opacity-80"
-            >
-              Create account
-            </button>
+            {mode === "sign-in" ? (
+              <>
+                New here?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("sign-up");
+                    setNotice(null);
+                  }}
+                  className="font-medium text-accent hover:opacity-80"
+                >
+                  Create account
+                </button>
+              </>
+            ) : (
+              <>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("sign-in");
+                    setNotice(null);
+                  }}
+                  className="font-medium text-accent hover:opacity-80"
+                >
+                  Sign in
+                </button>
+              </>
+            )}
           </p>
-
-          <div className="mt-8 border-t border-line pt-6 text-center">
-            <Link href="/agent" className="text-sm font-medium text-ink-soft hover:text-ink">
-              Preview the agent workspace as a demo →
-            </Link>
-          </div>
         </div>
       </div>
     </main>
