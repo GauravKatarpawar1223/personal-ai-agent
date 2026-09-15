@@ -141,11 +141,26 @@ if (!aiResponse.ok) {
     tool: "Personal AI",
     status: "failed",
   });
-  const detail = await aiResponse.text().catch(() => "");
-  return NextResponse.json(
-    { error: `The AI provider returned an error (${aiResponse.status}).`, detail: detail.slice(0, 500) },
-    { status: 502 }
-  );
+  const rawDetail = await aiResponse.text().catch(() => "");
+let geminiMessage = "";
+
+try {
+  const parsed = JSON.parse(rawDetail) as {
+    error?: { message?: string };
+  };
+  geminiMessage = parsed.error?.message ?? "";
+} catch {
+  // Not JSON — fall back to the raw body below.
+}
+
+return NextResponse.json(
+  {
+    error: `The AI provider returned an error (${aiResponse.status}): ${
+      geminiMessage || rawDetail.slice(0, 300) || "no further detail"
+    }`,
+  },
+  { status: 502 }
+);
 }
 
   const data = (await aiResponse.json()) as { candidates?: GeminiCandidate[] };
