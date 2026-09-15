@@ -133,20 +133,20 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!aiResponse.ok) {
-    await logActivity(supabase, {
-      userId,
-      conversationId,
-      action: `AI provider returned an error (${aiResponse.status})`,
-      tool: "Personal AI",
-      status: "failed",
-    });
-    const detail = await aiResponse.text().catch(() => "");
-    return NextResponse.json(
-      { error: `The AI provider returned an error (${aiResponse.status}).`, detail: detail.slice(0, 500) },
-      { status: 502 }
-    );
-  }
+if (!aiResponse.ok) {
+  await logActivity(supabase, {
+    userId,
+    conversationId,
+    action: `AI provider returned an error (${aiResponse.status})`,
+    tool: "Personal AI",
+    status: "failed",
+  });
+  const detail = await aiResponse.text().catch(() => "");
+  return NextResponse.json(
+    { error: `The AI provider returned an error (${aiResponse.status}).`, detail: detail.slice(0, 500) },
+    { status: 502 }
+  );
+}
 
   const data = (await aiResponse.json()) as { candidates?: GeminiCandidate[] };
   const candidate = data.candidates?.[0];
