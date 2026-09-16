@@ -12,7 +12,7 @@ import { logActivity } from "@/lib/data/activity";
 // and the current Google Search grounding tool shape before relying on
 // these in production — model names are dated identifiers Google revises
 // over time.
-const GEMINI_MODEL = "gemini-flash-latest";
+const GEMINI_MODEL = "gemini-3.5-flash-lite";
 const GOOGLE_SEARCH_TOOL = { google_search: {} };
 const HISTORY_LIMIT = 20;
 
