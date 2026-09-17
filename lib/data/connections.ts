@@ -1,6 +1,7 @@
 import { CONNECTOR_CATALOG } from "@/lib/connectors/catalog";
 import type { Connection } from "@/lib/types";
 import type { createClient } from "@/lib/supabase/server";
+import { getActiveProvider } from "@/lib/ai";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -27,7 +28,10 @@ export async function getConnectionsForUser(
   const connectedByProvider = new Map<string, ConnectedInfo>(
     (rows ?? []).map((row) => [
       row.provider_id as string,
-      { connectedAt: row.connected_at as string, scopes: (row.scopes as string[] | null) ?? undefined },
+      {
+        connectedAt: row.connected_at as string,
+        scopes: (row.scopes as string[] | null) ?? undefined,
+      },
     ])
   );
 
@@ -39,10 +43,12 @@ interface ConnectedInfo {
   scopes?: string[];
 }
 
-function buildFromCatalog(connectedByProvider: Map<string, ConnectedInfo>): Connection[] {
+function buildFromCatalog(
+  connectedByProvider: Map<string, ConnectedInfo>
+): Connection[] {
   return CONNECTOR_CATALOG.map((entry) => {
     // The browser/web-search tool has no per-user OAuth step — it's
-    // configured at the app level (GEMINI_API_KEY) or not at all.
+    // connected whenever the active AI provider (see lib/ai) is configured.
     if (entry.providerId === "browser") {
       return {
         id: `conn_${entry.providerId}`,
@@ -50,18 +56,23 @@ function buildFromCatalog(connectedByProvider: Map<string, ConnectedInfo>): Conn
         name: entry.name,
         category: entry.category,
         description: entry.description,
-        status: process.env.GEMINI_API_KEY ? "connected" : "not_connected",
+        status: getActiveProvider().isConfigured() ? "connected" : "not_connected",
       } satisfies Connection;
     }
 
     const connected = connectedByProvider.get(entry.providerId);
+
     return {
       id: `conn_${entry.providerId}`,
       providerId: entry.providerId,
       name: entry.name,
       category: entry.category,
       description: entry.description,
-      status: connected ? "connected" : entry.connector.implemented ? "not_connected" : "coming_soon",
+      status: connected
+        ? "connected"
+        : entry.connector.implemented
+          ? "not_connected"
+          : "coming_soon",
       connectedAt: connected?.connectedAt,
       scopes: connected?.scopes,
     } satisfies Connection;
