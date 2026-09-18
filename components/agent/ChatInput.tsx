@@ -34,9 +34,12 @@ function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
 }
 
 export function ChatInput({ value, onChange, onSubmit, disabled }: ChatInputProps) {
-  const [voiceState, setVoiceState] = useState<"idle" | "listening" | "unsupported">("idle");
+  const [voiceState, setVoiceState] = useState<
+    "idle" | "listening" | "unsupported" | "denied" | "no-speech" | "error"
+  >("idle");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const baseTextRef = useRef("");
+  const gotResultRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -57,6 +60,7 @@ export function ChatInput({ value, onChange, onSubmit, disabled }: ChatInputProp
     }
 
     baseTextRef.current = value ? `${value} ` : "";
+    gotResultRef.current = false;
     const recognition = new Ctor();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -67,14 +71,37 @@ export function ChatInput({ value, onChange, onSubmit, disabled }: ChatInputProp
       for (let i = 0; i < event.results.length; i += 1) {
         transcript += event.results[i][0].transcript;
       }
+      if (transcript.trim()) gotResultRef.current = true;
       onChange(`${baseTextRef.current}${transcript}`);
     };
-    recognition.onerror = () => setVoiceState("idle");
-    recognition.onend = () => setVoiceState("idle");
+    recognition.onerror = (event: any) => {
+      const code = event?.error;
+      if (code === "not-allowed" || code === "permission-denied" || code === "service-not-allowed") {
+        setVoiceState("denied");
+      } else if (code === "no-speech") {
+        setVoiceState("no-speech");
+      } else {
+        setVoiceState("error");
+      }
+    };
+    recognition.onend = () => {
+      setVoiceState((current) => {
+        // Only fall back to idle if onerror didn't already set a more
+        // specific state (onend fires after onerror on most browsers).
+        if (current === "listening") {
+          return gotResultRef.current ? "idle" : "no-speech";
+        }
+        return current;
+      });
+    };
 
     recognitionRef.current = recognition;
-    recognition.start();
-    setVoiceState("listening");
+    try {
+      recognition.start();
+      setVoiceState("listening");
+    } catch {
+      setVoiceState("error");
+    }
   }
 
   function handleSubmit(e: FormEvent) {
@@ -102,6 +129,17 @@ export function ChatInput({ value, onChange, onSubmit, disabled }: ChatInputProp
         <p className="mb-2 text-xs text-ink-faint">
           Voice input isn&apos;t supported in this browser yet. Try Chrome or Edge.
         </p>
+      )}
+      {voiceState === "denied" && (
+        <p className="mb-2 text-xs text-danger">
+          Microphone access was denied. Allow microphone permission for this site and try again.
+        </p>
+      )}
+      {voiceState === "no-speech" && (
+        <p className="mb-2 text-xs text-ink-faint">Didn&apos;t catch anything — tap the mic and try again.</p>
+      )}
+      {voiceState === "error" && (
+        <p className="mb-2 text-xs text-danger">Voice input hit an error — tap the mic to try again.</p>
       )}
       <form
         onSubmit={handleSubmit}
