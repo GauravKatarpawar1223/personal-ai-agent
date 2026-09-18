@@ -28,10 +28,7 @@ export async function getConnectionsForUser(
   const connectedByProvider = new Map<string, ConnectedInfo>(
     (rows ?? []).map((row) => [
       row.provider_id as string,
-      {
-        connectedAt: row.connected_at as string,
-        scopes: (row.scopes as string[] | null) ?? undefined,
-      },
+      { connectedAt: row.connected_at as string, scopes: (row.scopes as string[] | null) ?? undefined },
     ])
   );
 
@@ -43,9 +40,7 @@ interface ConnectedInfo {
   scopes?: string[];
 }
 
-function buildFromCatalog(
-  connectedByProvider: Map<string, ConnectedInfo>
-): Connection[] {
+function buildFromCatalog(connectedByProvider: Map<string, ConnectedInfo>): Connection[] {
   return CONNECTOR_CATALOG.map((entry) => {
     // The browser/web-search tool has no per-user OAuth step — it's
     // connected whenever the active AI provider (see lib/ai) is configured.
@@ -61,18 +56,13 @@ function buildFromCatalog(
     }
 
     const connected = connectedByProvider.get(entry.providerId);
-
     return {
       id: `conn_${entry.providerId}`,
       providerId: entry.providerId,
       name: entry.name,
       category: entry.category,
       description: entry.description,
-      status: connected
-        ? "connected"
-        : entry.connector.implemented
-          ? "not_connected"
-          : "coming_soon",
+      status: connected ? "connected" : entry.connector.implemented ? "not_connected" : "coming_soon",
       connectedAt: connected?.connectedAt,
       scopes: connected?.scopes,
     } satisfies Connection;
