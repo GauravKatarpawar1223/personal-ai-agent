@@ -21,6 +21,11 @@ interface ConfirmationCardProps {
   details: Record<string, string>;
   resolved?: boolean;
   approved?: boolean;
+  /** The tool's real outcome text once resolved (e.g. "Google Calendar
+   *  connection required…" or a real success message). Required once
+   *  resolved is true — Phase 3 always runs a real tool on approval, so
+   *  there is no generic "demo" text to fall back to. */
+  resultMessage?: string;
   onApprove: () => void;
   onCancel: () => void;
 }
@@ -28,8 +33,10 @@ interface ConfirmationCardProps {
 /**
  * Any tool with permissionLevel "execute" routes through this component
  * before it can run — see requiresConfirmation() in
- * /lib/agent/permissions.ts. Phase 2 still never actually performs the
- * underlying action: Approve only records the decision locally.
+ * /lib/agent/permissions.ts. Approve triggers a real POST to
+ * /api/agent/confirm, which runs the actual tool (see
+ * /lib/agent/executors.ts) and reports back whatever it really did —
+ * this never claims success on its own.
  */
 export function ConfirmationCard({
   title = "Action requires your approval",
@@ -38,6 +45,7 @@ export function ConfirmationCard({
   details,
   resolved = false,
   approved,
+  resultMessage,
   onApprove,
   onCancel,
 }: ConfirmationCardProps) {
@@ -73,14 +81,8 @@ export function ConfirmationCard({
         </div>
       ) : (
         <p className="flex items-center gap-1.5 text-sm font-medium text-ink-soft">
-          {approved ? (
-            <>
-              <IconCheck width={14} height={14} className="text-accent" />
-              Approved — demo only, nothing was actually sent.
-            </>
-          ) : (
-            "Cancelled — no action was taken."
-          )}
+          {approved && <IconCheck width={14} height={14} className="text-accent shrink-0" />}
+          {resultMessage ?? (approved ? "Approved." : "Cancelled — no action was taken.")}
         </p>
       )}
     </div>
