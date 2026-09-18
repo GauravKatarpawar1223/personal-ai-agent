@@ -17,24 +17,50 @@ interface RunState {
 
 interface ConfirmationState {
   messageId: string;
+  permissionRequestId: string;
+  title: string;
   description: string;
   impact: PermissionRequestImpact;
   details: Record<string, string>;
   resolved: boolean;
   approved?: boolean;
+  resultMessage?: string;
+  pending?: boolean;
 }
 
 function makeId(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
-interface ChatApiSuccess {
+interface ApiMessage {
+  id: string;
   conversationId: string;
-  message: { id: string; conversationId: string; role: "agent"; content: string; createdAt: string };
-  usedWebSearch: boolean;
+  role: "agent";
+  content: string;
+  createdAt: string;
 }
 
-interface ChatApiError {
+interface ConfirmationPayload {
+  permissionRequestId: string;
+  title: string;
+  description: string;
+  impact: PermissionRequestImpact;
+  details: Record<string, string>;
+}
+
+interface CommandApiSuccess {
+  conversationId: string;
+  message: ApiMessage;
+  confirmation?: ConfirmationPayload;
+}
+
+interface ConfirmApiSuccess {
+  conversationId?: string;
+  message?: ApiMessage;
+  outcome: { approved: boolean; resultMessage: string };
+}
+
+interface ApiError {
   error: string;
 }
 
@@ -75,16 +101,17 @@ export function AgentWorkspace({
     };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
+    setConfirmation(null);
 
     const runId = makeId("run");
     setRun({
       messageId: runId,
-      steps: [{ id: "send", label: "Sending your message", status: "active" }],
+      steps: [{ id: "parse", label: "Reading your command", status: "active" }],
     });
 
     let response: Response;
     try {
-      response = await fetch("/api/agent/chat", {
+      response = await fetch("/api/agent/command", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ conversationId, message: trimmed }),
@@ -92,20 +119,20 @@ export function AgentWorkspace({
     } catch {
       setRun({
         messageId: runId,
-        steps: [{ id: "send", label: "Couldn't reach the server — check your connection.", status: "failed" }],
+        steps: [{ id: "parse", label: "Couldn't reach the server — check your connection.", status: "failed" }],
         failed: true,
       });
       return;
     }
 
-    const payload = (await response.json().catch(() => null)) as ChatApiSuccess | ChatApiError | null;
+    const payload = (await response.json().catch(() => null)) as CommandApiSuccess | ApiError | null;
 
     if (!response.ok || !payload || "error" in payload) {
       const message = payload && "error" in payload ? payload.error : `Something went wrong (${response.status}).`;
       setRun({
         messageId: runId,
         steps: [
-          { id: "send", label: "Sending your message", status: "done" },
+          { id: "parse", label: "Reading your command", status: "done" },
           { id: "fail", label: message, status: "failed" },
         ],
         failed: true,
@@ -113,11 +140,12 @@ export function AgentWorkspace({
       return;
     }
 
-    const steps: AgentActionStep[] = [{ id: "send", label: "Sending your message", status: "done" }];
-    if (payload.usedWebSearch) {
-      steps.push({ id: "search", label: "Searched the web", status: "done" });
-    }
-    steps.push({ id: "reply", label: "Response ready", status: "done" });
+    const steps: AgentActionStep[] = [{ id: "parse", label: "Reading your command", status: "done" }];
+    steps.push({
+      id: "act",
+      label: payload.confirmation ? "Prepared — waiting for your approval" : "Done",
+      status: "done",
+    });
     setRun({ messageId: runId, steps });
 
     if (!conversationId) {
@@ -135,23 +163,64 @@ export function AgentWorkspace({
     setMessages((prev) => [...prev, agentMessage]);
     setRun(null);
 
-    if (mentionsSensitiveAction(trimmed)) {
+    if (payload.confirmation) {
       setConfirmation({
         messageId: agentMessage.id,
-        description: "Send a follow-up email about this to your team?",
-        impact: "send_message",
-        details: {
-          to: "team@example.com",
-          subject: "Following up",
-          note: "Demo only — Gmail isn't connected, so nothing will actually be sent.",
-        },
+        permissionRequestId: payload.confirmation.permissionRequestId,
+        title: payload.confirmation.title,
+        description: payload.confirmation.description,
+        impact: payload.confirmation.impact,
+        details: payload.confirmation.details,
         resolved: false,
       });
     }
   }
 
-  function resolveConfirmation(approved: boolean) {
-    setConfirmation((prev) => (prev ? { ...prev, resolved: true, approved } : prev));
+  async function resolveConfirmation(approved: boolean) {
+    if (!confirmation || confirmation.pending) return;
+    const permissionRequestId = confirmation.permissionRequestId;
+    setConfirmation((prev) => (prev ? { ...prev, pending: true } : prev));
+
+    let response: Response;
+    try {
+      response = await fetch("/api/agent/confirm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissionRequestId, approved }),
+      });
+    } catch {
+      setConfirmation((prev) =>
+        prev
+          ? { ...prev, pending: false, resolved: true, approved, resultMessage: "Couldn't reach the server." }
+          : prev
+      );
+      return;
+    }
+
+    const payload = (await response.json().catch(() => null)) as ConfirmApiSuccess | ApiError | null;
+
+    if (!response.ok || !payload || "error" in payload) {
+      const message = payload && "error" in payload ? payload.error : "Something went wrong.";
+      setConfirmation((prev) => (prev ? { ...prev, pending: false, resolved: true, approved, resultMessage: message } : prev));
+      return;
+    }
+
+    setConfirmation((prev) =>
+      prev
+        ? { ...prev, pending: false, resolved: true, approved, resultMessage: payload.outcome.resultMessage }
+        : prev
+    );
+
+    if (payload.message) {
+      const resultMessage: Message = {
+        id: payload.message.id,
+        conversationId: payload.message.conversationId,
+        role: "agent",
+        content: payload.message.content,
+        createdAt: payload.message.createdAt,
+      };
+      setMessages((prev) => [...prev, resultMessage]);
+    }
   }
 
   return (
@@ -159,7 +228,9 @@ export function AgentWorkspace({
       <header className="flex items-center justify-between border-b border-line px-4 py-3 sm:px-6">
         <div>
           <p className="text-sm font-medium text-ink">Agent workspace</p>
-          <p className="text-xs text-ink-faint">Real AI, with web search as its only connected tool</p>
+          <p className="text-xs text-ink-faint">
+            Deterministic commands — calendar, calculator, date/time, messaging. No AI in this phase.
+          </p>
         </div>
       </header>
 
@@ -174,11 +245,13 @@ export function AgentWorkspace({
                 {confirmation?.messageId === message.id && (
                   <div className="pl-9">
                     <ConfirmationCard
+                      title={confirmation.title}
                       description={confirmation.description}
                       impact={confirmation.impact}
                       details={confirmation.details}
                       resolved={confirmation.resolved}
                       approved={confirmation.approved}
+                      resultMessage={confirmation.resultMessage}
                       onApprove={() => resolveConfirmation(true)}
                       onCancel={() => resolveConfirmation(false)}
                     />
@@ -203,9 +276,4 @@ export function AgentWorkspace({
       />
     </div>
   );
-}
-
-function mentionsSensitiveAction(text: string): boolean {
-  const lower = text.toLowerCase();
-  return ["email", "send", "message"].some((k) => lower.includes(k));
 }
