@@ -1,9 +1,8 @@
 const QUICK_ACTIONS = [
-  "Research something",
-  "Plan my day",
-  "Manage my tasks",
-  "Find information",
-  "Work with my files",
+  "today calendar check karo",
+  "calculator 25 * 4",
+  "what time is it",
+  "15 September ko 5 baje meeting add karo",
 ];
 
 export function QuickActions({ onSelect }: { onSelect: (text: string) => void }) {
