@@ -6,6 +6,7 @@ import { recordToolExecution } from "@/lib/data/tool-executions";
 import { createPermissionRequest } from "@/lib/data/permission-requests";
 import { parseCommand } from "@/lib/agent/parser";
 import { executeCalendarSearch, executeCalculator, executeDateTime } from "@/lib/agent/executors";
+import { checkAvailability } from "@/lib/connectors/google/calendar";
 import type { PermissionRequestImpact } from "@/lib/types";
 
 const UNKNOWN_COMMAND_REPLY =
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
 
   // ---- READ-level commands: execute immediately, no confirmation. ----
   if (command.intent === "calendar.search") {
-    const result = executeCalendarSearch(command.dateLabel);
+    const result = await executeCalendarSearch(supabase, userId, command.date, command.dateLabel);
     return await respondImmediately(supabase, {
       userId,
       conversationId,
@@ -124,21 +125,73 @@ export async function POST(request: Request) {
     });
   }
 
-  // ---- Multi-step: search first, then (honestly) can't evaluate the
-  // condition without a connected calendar, so it stops rather than
-  // guessing whether the user is actually free. ----
+  // ---- Multi-step: check real availability first (if Calendar is
+  // connected), then only prepare the event if the slot is actually
+  // free. Never guesses when it can't check. ----
   if (command.intent === "calendar.conditional_create") {
-    const searchResult = executeCalendarSearch(command.dateLabel);
-    const reply =
-      `I checked ${command.dateLabel} first before adding "${command.title}" at ${command.time}, but ${searchResult.message.toLowerCase()} ` +
-      `I won't add the event without being able to check your availability — connect Google Calendar, or ask me to add it directly.`;
-    return await respondImmediately(supabase, {
+    const availability = await checkAvailability(
+      supabase,
+      userId,
+      command.date,
+      command.hours,
+      command.minutes,
+      command.dateLabel
+    );
+
+    if (!availability.connected) {
+      const reply =
+        `I checked ${command.dateLabel} first before adding "${command.title}" at ${command.time}, but Google Calendar connection required. ` +
+        `I won't add the event without being able to check your availability — connect Google Calendar, or ask me to add it directly.`;
+      return await respondImmediately(supabase, {
+        userId,
+        conversationId,
+        toolId: "calendar.conditional_create",
+        resultMessage: reply,
+        resultStatus: "failed",
+        toolName: "Google Calendar",
+      });
+    }
+
+    if (availability.free === null) {
+      return await respondImmediately(supabase, {
+        userId,
+        conversationId,
+        toolId: "calendar.conditional_create",
+        resultMessage: availability.message ?? "Google Calendar returned an error while checking your availability.",
+        resultStatus: "failed",
+        toolName: "Google Calendar",
+      });
+    }
+
+    if (!availability.free) {
+      return await respondImmediately(supabase, {
+        userId,
+        conversationId,
+        toolId: "calendar.conditional_create",
+        resultMessage: `You're not free at ${command.time} on ${command.dateLabel} ("${availability.conflictSummary}" is already on your calendar), so I didn't add "${command.title}".`,
+        resultStatus: "completed",
+        toolName: "Google Calendar",
+      });
+    }
+
+    // Free — prepare the event exactly like a normal calendar.create,
+    // still requiring explicit confirmation before it's actually added.
+    const display = { date: command.dateLabel, time: command.time, title: command.title };
+    return await respondWithConfirmation(supabase, {
       userId,
       conversationId,
-      toolId: "calendar.conditional_create",
-      resultMessage: reply,
-      resultStatus: "failed",
-      toolName: "Google Calendar",
+      toolId: "calendar.create",
+      toolInput: {
+        ...display,
+        dateIso: command.date,
+        hours: String(command.hours),
+        minutes: String(command.minutes),
+      },
+      display,
+      title: "Confirm calendar event",
+      description: `You're free at ${command.time} on ${command.dateLabel}. Add "${command.title}"?`,
+      impact: "booking",
+      replyPrefix: `Good news — you're free then. I've prepared this calendar event:`,
     });
   }
 
@@ -149,7 +202,12 @@ export async function POST(request: Request) {
       userId,
       conversationId,
       toolId: "calendar.create",
-      toolInput: display,
+      toolInput: {
+        ...display,
+        dateIso: command.date,
+        hours: String(command.hours),
+        minutes: String(command.minutes),
+      },
       display,
       title: "Confirm calendar event",
       description: `Add "${command.title}" on ${command.dateLabel} at ${command.time}?`,
@@ -165,7 +223,7 @@ export async function POST(request: Request) {
       userId,
       conversationId,
       toolId: command.intent,
-      toolInput: display,
+      toolInput: { ...display, dateIso: command.date },
       display,
       title: `Confirm calendar ${verb}`,
       description: `${verb === "update" ? "Update" : "Delete"} an event on ${command.dateLabel}?`,
