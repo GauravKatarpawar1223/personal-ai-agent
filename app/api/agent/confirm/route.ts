@@ -4,7 +4,7 @@ import { insertMessage } from "@/lib/data/conversations";
 import { logActivity } from "@/lib/data/activity";
 import { recordToolExecution } from "@/lib/data/tool-executions";
 import { getPermissionRequest, resolvePermissionRequest } from "@/lib/data/permission-requests";
-import { executeCalendarWrite, executeMessageSend } from "@/lib/agent/executors";
+import { executeCalendarWrite, executeMessageSend, type ExecutionResult } from "@/lib/agent/executors";
 
 interface ConfirmRequestBody {
   permissionRequestId?: string;
@@ -81,16 +81,36 @@ export async function POST(request: Request) {
   // Approved: actually run the tool. Never report success unless the
   // tool itself reports completed.
   const { toolId, input } = permissionRequest.details;
-  const result =
-    toolId === "calendar.create"
-      ? executeCalendarWrite("create", input.title ?? "the event")
-      : toolId === "calendar.update"
-      ? executeCalendarWrite("update", input.request ?? "the event")
-      : toolId === "calendar.delete"
-      ? executeCalendarWrite("delete", input.request ?? "the event")
-      : toolId === "message.send"
-      ? executeMessageSend(input.to ?? "the recipient")
-      : { status: "failed" as const, message: "Unknown tool — nothing was executed.", toolName: "Personal AI" };
+  let result: ExecutionResult;
+  if (toolId === "calendar.create") {
+    result = await executeCalendarWrite(supabase, userId, "create", {
+      action: "create",
+      dateIso: input.dateIso ?? "",
+      dateLabel: input.date ?? "",
+      hours: Number(input.hours ?? "0"),
+      minutes: Number(input.minutes ?? "0"),
+      title: input.title ?? "the event",
+      timeLabel: input.time ?? "",
+    });
+  } else if (toolId === "calendar.update") {
+    result = await executeCalendarWrite(supabase, userId, "update", {
+      action: "update",
+      dateIso: input.dateIso ?? "",
+      dateLabel: input.date ?? "",
+      raw: input.request ?? "",
+    });
+  } else if (toolId === "calendar.delete") {
+    result = await executeCalendarWrite(supabase, userId, "delete", {
+      action: "delete",
+      dateIso: input.dateIso ?? "",
+      dateLabel: input.date ?? "",
+      raw: input.request ?? "",
+    });
+  } else if (toolId === "message.send") {
+    result = executeMessageSend(input.to ?? "the recipient");
+  } else {
+    result = { status: "failed", message: "Unknown tool — nothing was executed.", toolName: "Personal AI" };
+  }
 
   await logActivity(supabase, {
     userId,
