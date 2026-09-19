@@ -1,5 +1,13 @@
 import { evaluateExpression } from "@/lib/agent/calculator";
-import { googleConnector } from "@/lib/connectors/google";
+import {
+  searchCalendarEvents,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+} from "@/lib/connectors/google/calendar";
+import type { createClient } from "@/lib/supabase/server";
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
 export interface ExecutionResult {
   status: "completed" | "failed";
@@ -8,41 +16,49 @@ export interface ExecutionResult {
 }
 
 /**
- * calendar.search — READ, runs automatically. Google Calendar has no
- * real OAuth/API wiring yet (see lib/connectors/google — implemented:
- * false), so this honestly reports that instead of fabricating events.
- * If/when that connector is finished, this is the one place that needs
- * to change: branch on googleConnector.implemented and call the real
- * API instead of returning the "connection required" message.
+ * calendar.search — READ, runs automatically. Delegates to the real
+ * Google Calendar API (lib/connectors/google/calendar.ts) once the
+ * user has connected it; that module itself returns the honest
+ * "Google Calendar connection required" message when they haven't, so
+ * this never fabricates events either way.
  */
-export function executeCalendarSearch(dateLabel: string): ExecutionResult {
-  if (!googleConnector.implemented) {
-    return {
-      status: "failed",
-      message: `Google Calendar connection required to check ${dateLabel}. Connect it from the Connections page.`,
-      toolName: "Google Calendar",
-    };
-  }
-  // Unreachable until the connector above is actually implemented.
-  return { status: "failed", message: "Google Calendar isn't returning data right now.", toolName: "Google Calendar" };
+export async function executeCalendarSearch(
+  supabase: SupabaseServerClient,
+  userId: string,
+  dateIso: string,
+  dateLabel: string
+): Promise<ExecutionResult> {
+  const result = await searchCalendarEvents(supabase, userId, dateIso, dateLabel);
+  return { status: result.status, message: result.message, toolName: "Google Calendar" };
 }
 
 /** calendar.create / calendar.update / calendar.delete — EXECUTE, only
  *  called after the user approves via ConfirmationCard. Same honesty
- *  rule: never claims to have created/changed/deleted a real event
- *  while no calendar connector exists. */
-export function executeCalendarWrite(
+ *  rule as calendar.search: delegates to the real API, never claims
+ *  success unless Google Calendar actually reports it. */
+export async function executeCalendarWrite(
+  supabase: SupabaseServerClient,
+  userId: string,
   action: "create" | "update" | "delete",
-  summary: string
-): ExecutionResult {
-  if (!googleConnector.implemented) {
-    return {
-      status: "failed",
-      message: `Google Calendar connection required — I can't ${action} "${summary}" until it's connected.`,
-      toolName: "Google Calendar",
-    };
+  params:
+    | { action: "create"; dateIso: string; dateLabel: string; hours: number; minutes: number; title: string; timeLabel: string }
+    | { action: "update" | "delete"; dateIso: string; dateLabel: string; raw: string }
+): Promise<ExecutionResult> {
+  if (params.action === "create") {
+    const result = await createCalendarEvent(supabase, userId, {
+      dateIso: params.dateIso,
+      hours: params.hours,
+      minutes: params.minutes,
+      title: params.title,
+      dateLabel: params.dateLabel,
+      timeLabel: params.timeLabel,
+    });
+    return { status: result.status, message: result.message, toolName: "Google Calendar" };
   }
-  return { status: "failed", message: "Google Calendar isn't available right now.", toolName: "Google Calendar" };
+
+  const fn = action === "update" ? updateCalendarEvent : deleteCalendarEvent;
+  const result = await fn(supabase, userId, { dateIso: params.dateIso, dateLabel: params.dateLabel, raw: params.raw });
+  return { status: result.status, message: result.message, toolName: "Google Calendar" };
 }
 
 /** calculator — READ, runs automatically. Real arithmetic, no fake
