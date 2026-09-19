@@ -35,6 +35,11 @@ const WEEKDAYS: Record<string, number> = {
   saturday: 6, sat: 6,
 };
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
 export interface ParsedDate {
   /** YYYY-MM-DD */
   date: string;
@@ -42,18 +47,53 @@ export interface ParsedDate {
   label: string;
 }
 
-function toIso(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/**
+ * India (IST, UTC+5:30, no DST) is this app's calendar timezone — see
+ * lib/connectors/google/calendar.ts, which uses the same offset for
+ * event creation and day boundaries. Every "today"/"tomorrow"/weekday
+ * calculation below is done in IST explicitly, never via the server's
+ * local Date methods (getFullYear/getMonth/getDate/getDay/setDate),
+ * because those depend on whatever timezone the Node process happens
+ * to be configured with (UTC on Vercel) — not the user's. All of the
+ * arithmetic here instead goes through Date.UTC()/getUTC*(), which are
+ * always timezone-independent, applied to a timestamp already shifted
+ * by the IST offset. This works correctly no matter what timezone the
+ * server process itself is running in.
+ */
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+interface DateParts {
+  year: number;
+  /** 0-indexed, matches Date's convention. */
+  month: number;
+  day: number;
 }
 
-function toLabel(d: Date): string {
-  return d.toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
+/** The current IST calendar date/weekday for a given instant. */
+function istPartsNow(now: Date): DateParts & { weekday: number } {
+  const shifted = new Date(now.getTime() + IST_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    day: shifted.getUTCDate(),
+    weekday: shifted.getUTCDay(),
+  };
 }
 
-function addDays(base: Date, days: number): Date {
-  const d = new Date(base);
-  d.setDate(d.getDate() + days);
-  return d;
+function addIstDays(parts: DateParts, days: number): DateParts {
+  // Pure UTC arithmetic — Date.UTC/getUTC* never touch the server's
+  // configured timezone, so this is safe regardless of where it runs.
+  const ms = Date.UTC(parts.year, parts.month, parts.day) + days * 86_400_000;
+  const shifted = new Date(ms);
+  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth(), day: shifted.getUTCDate() };
+}
+
+function toIso(parts: DateParts): string {
+  return `${parts.year}-${String(parts.month + 1).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function toLabel(parts: DateParts): string {
+  return `${parts.day} ${MONTH_NAMES[parts.month]} ${parts.year}`;
 }
 
 function safeParseInt(value: string | undefined, fallback = 0): number {
@@ -64,30 +104,32 @@ function safeParseInt(value: string | undefined, fallback = 0): number {
 
 /**
  * Finds the first recognizable date expression in free text and
- * resolves it against `now`. Returns null if nothing matched.
+ * resolves it against `now` (interpreted in IST — see istPartsNow).
+ * Returns null if nothing matched.
  */
 export function parseDateExpression(text: string, now: Date): ParsedDate | null {
   const lower = text.toLowerCase();
+  const nowParts = istPartsNow(now);
 
   // Relative keywords — checked as whole words so "today" doesn't match
   // inside an unrelated word.
   if (/\b(today|aaj)\b/.test(lower)) {
-    return { date: toIso(now), label: toLabel(now) };
+    return { date: toIso(nowParts), label: toLabel(nowParts) };
   }
   if (/\b(tomorrow|kal)\b/.test(lower)) {
-    const d = addDays(now, 1);
+    const d = addIstDays(nowParts, 1);
     return { date: toIso(d), label: toLabel(d) };
   }
   if (/\byesterday\b/.test(lower)) {
-    const d = addDays(now, -1);
+    const d = addIstDays(nowParts, -1);
     return { date: toIso(d), label: toLabel(d) };
   }
   if (/\bparso\b/.test(lower)) {
-    const d = addDays(now, 2);
+    const d = addIstDays(nowParts, 2);
     return { date: toIso(d), label: toLabel(d) };
   }
   if (/\bnext week\b/.test(lower)) {
-    const d = addDays(now, 7);
+    const d = addIstDays(nowParts, 7);
     return { date: toIso(d), label: toLabel(d) };
   }
 
@@ -101,10 +143,10 @@ export function parseDateExpression(text: string, now: Date): ParsedDate | null 
   if (weekdayMatch && weekdayName !== undefined) {
     const target = WEEKDAYS[weekdayName];
     if (target !== undefined) {
-      const current = now.getDay();
+      const current = nowParts.weekday;
       let delta = (target - current + 7) % 7;
       if (delta === 0 || weekdayMatch[1]) delta = delta === 0 ? 7 : delta;
-      const d = addDays(now, delta);
+      const d = addIstDays(nowParts, delta);
       return { date: toIso(d), label: toLabel(d) };
     }
   }
@@ -135,17 +177,22 @@ export function parseDateExpression(text: string, now: Date): ParsedDate | null 
   }
 
   if (day !== null && !Number.isNaN(day) && month !== null && day >= 1 && day <= 31) {
-    const resolvedYear = year ?? now.getFullYear();
-    let candidate = new Date(resolvedYear, month, day);
-    // No year given and the date already passed this year — assume next year.
+    const resolvedYear = year ?? nowParts.year;
+    let candidate: DateParts = { year: resolvedYear, month, day };
+    // No year given and the date already passed this year (compared in
+    // IST, using plain numeric comparison — no Date object involved) —
+    // assume next year.
     if (!year) {
-      const todayAtMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      if (candidate < todayAtMidnight) {
-        candidate = new Date(resolvedYear + 1, month, day);
+      const candidateMs = Date.UTC(candidate.year, candidate.month, candidate.day);
+      const todayMs = Date.UTC(nowParts.year, nowParts.month, nowParts.day);
+      if (candidateMs < todayMs) {
+        candidate = { year: resolvedYear + 1, month, day };
       }
     }
-    if (candidate.getMonth() === month) {
-      // guards against invalid dates like 31 February silently rolling over
+    // Guard against invalid dates like 31 February silently rolling
+    // over into March — Date.UTC() normalizes overflow, so re-check.
+    const normalized = new Date(Date.UTC(candidate.year, candidate.month, candidate.day));
+    if (normalized.getUTCMonth() === month) {
       return { date: toIso(candidate), label: toLabel(candidate) };
     }
   }
@@ -194,4 +241,4 @@ function formatTime(hours: number, minutes: number): string {
   const period = hours >= 12 ? "PM" : "AM";
   const displayHour = hours % 12 === 0 ? 12 : hours % 12;
   return `${displayHour}:${String(minutes).padStart(2, "0")} ${period}`;
-}
+      }
