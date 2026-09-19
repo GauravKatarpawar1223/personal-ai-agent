@@ -7,6 +7,8 @@ export type ParsedCommand =
       date: string;
       dateLabel: string;
       time: string;
+      hours: number;
+      minutes: number;
       title: string;
     }
   | { intent: "calendar.update" | "calendar.delete"; date: string; dateLabel: string; raw: string }
@@ -15,6 +17,8 @@ export type ParsedCommand =
       date: string;
       dateLabel: string;
       time: string;
+      hours: number;
+      minutes: number;
       title: string;
     }
   | { intent: "calculator"; expression: string }
@@ -87,6 +91,8 @@ export function parseCommand(text: string, now: Date = new Date()): ParsedComman
         date: parsedDate.date,
         dateLabel: parsedDate.label,
         time: time.label,
+        hours: time.hours,
+        minutes: time.minutes,
         title: extractTitle(trimmed) ?? "Meeting",
       };
     }
@@ -99,6 +105,8 @@ export function parseCommand(text: string, now: Date = new Date()): ParsedComman
         date: parsedDate.date,
         dateLabel: parsedDate.label,
         time: time.label,
+        hours: time.hours,
+        minutes: time.minutes,
         title: extractTitle(trimmed) ?? "Meeting",
       };
     }
