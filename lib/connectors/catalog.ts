@@ -1,4 +1,5 @@
 import { googleConnector } from "@/lib/connectors/google";
+import { googleCalendarConnector } from "@/lib/connectors/google/calendar-connector";
 import { githubConnector } from "@/lib/connectors/github";
 import { browserConnector } from "@/lib/connectors/browser";
 import type { ConnectorDefinition } from "@/lib/connectors/types";
@@ -9,9 +10,10 @@ import type { ConnectorDefinition } from "@/lib/connectors/types";
  * Whether a given user has actually connected one of these lives in the
  * `connections` table (see lib/data/connections.ts, which merges the two).
  *
- * Gmail, Calendar, Drive, and Tasks share one OAuth connector
- * (googleConnector) but are listed separately here because a user
- * connects/disconnects them individually in the UI.
+ * Gmail, Drive, and Tasks still share the generic, unimplemented
+ * googleConnector. Calendar has its own real, implemented connector
+ * (googleCalendarConnector) with its own OAuth flow — connecting it
+ * must never make the others look connected.
  */
 export interface CatalogEntry {
   providerId: string;
@@ -34,7 +36,7 @@ export const CONNECTOR_CATALOG: CatalogEntry[] = [
     name: "Google Calendar",
     category: "Google Workspace",
     description: "Check availability and schedule events.",
-    connector: googleConnector,
+    connector: googleCalendarConnector,
   },
   {
     providerId: "google_drive",
