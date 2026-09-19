@@ -46,7 +46,16 @@ export function ConnectionCard({ connection }: { connection: Connection }) {
       <p className="text-sm text-ink-soft leading-relaxed">{connection.description}</p>
 
       <div className="mt-1">
-        {connection.status === "not_connected" && (
+        {connection.status === "not_connected" && connection.providerId === "google_calendar" && (
+          <a
+            href="/api/connections/google/calendar/authorize"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink hover:border-ink-faint transition-colors"
+          >
+            <IconLock width={14} height={14} />
+            Connect
+          </a>
+        )}
+        {connection.status === "not_connected" && connection.providerId !== "google_calendar" && (
           <>
             <Button
               variant="secondary"
