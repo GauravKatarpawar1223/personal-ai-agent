@@ -1,1 +1,6 @@
-
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Personal AI Agent (Device)</string>
+    <string name="accessibility_service_label">Personal AI Agent Device Execution</string>
+    <string name="accessibility_service_description">Lets Personal AI Agent observe and interact with Chrome ONLY, to complete searches and other steps you ask it to do out loud. It cannot see or control any other app. It will never enter your PIN, password, or OTP.</string>
+</resources>
