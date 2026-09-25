@@ -1,0 +1,15 @@
+# Copy this file to android/local.properties (NOT committed — it's
+# gitignored) and fill in real values. None of these are secret in the
+# security sense (SUPABASE_PUBLISHABLE_KEY is meant to ship in clients,
+# same as NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in the web app's
+# .env.local) — this file exists for per-developer configurability, the
+# same reason the web app uses .env.local instead of hardcoding values.
+
+# Also add the standard Android SDK location line here, e.g.:
+# sdk.dir=/Users/you/Library/Android/sdk
+
+SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+SUPABASE_PUBLISHABLE_KEY=
+# Your deployed Vercel URL, no trailing slash, e.g.
+# https://personal-ai-agent-rho-seven.vercel.app
+BACKEND_BASE_URL=
