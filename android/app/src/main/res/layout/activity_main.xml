@@ -1,1 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
 
+    <LinearLayout
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Personal AI Agent — Device (V0)"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp" />
+
+        <!-- Login group: shown until a Supabase session is stored. -->
+        <LinearLayout
+            android:id="@+id/loginGroup"
+            android:orientation="vertical"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <EditText
+                android:id="@+id/emailInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Email (same account as the web app)"
+                android:inputType="textEmailAddress" />
+
+            <EditText
+                android:id="@+id/passwordInput"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="Password"
+                android:inputType="textPassword"
+                android:layout_marginTop="8dp" />
+
+            <Button
+                android:id="@+id/loginButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sign in"
+                android:layout_marginTop="8dp" />
+        </LinearLayout>
+
+        <!-- Agent group: shown once signed in. -->
+        <LinearLayout
+            android:id="@+id/agentGroup"
+            android:orientation="vertical"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone"
+            android:layout_marginTop="16dp">
+
+            <Button
+                android:id="@+id/accessibilitySettingsButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="1. Enable in Accessibility settings" />
+
+            <Button
+                android:id="@+id/micButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="2. 🎤 Speak a command"
+                android:layout_marginTop="8dp" />
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="Try: &quot;Google par AI agent search karo&quot;" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>
