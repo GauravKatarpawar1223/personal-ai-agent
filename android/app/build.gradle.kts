@@ -1,3 +1,4 @@
+import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,7 +7,7 @@ plugins {
 // Reads android/local.properties (gitignored, per-developer — mirrors
 // how the web app uses .env.local instead of committing real values).
 // Copy local.properties.example to local.properties and fill these in.
-val localProps = java.util.Properties()
+val localProps = Properties()
 val localPropsFile = rootProject.file("local.properties")
 if (localPropsFile.exists()) {
     localProps.load(localPropsFile.inputStream())
