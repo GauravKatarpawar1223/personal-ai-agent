@@ -178,7 +178,7 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return StepResult(false, "No active window to submit from")
         val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
             ?: return StepResult(false, "No focused field to submit")
-        val submitted = focused.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
+        val submitted = focused.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
         return if (submitted) StepResult(true, "Submitted")
         else StepResult(false, "The focused field didn't accept a submit action")
     }
