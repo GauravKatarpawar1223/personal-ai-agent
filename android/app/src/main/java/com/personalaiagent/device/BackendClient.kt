@@ -24,6 +24,17 @@ object BackendClient {
         return postJson(url, body, extraHeaders = mapOf("apikey" to BuildConfig.SUPABASE_PUBLISHABLE_KEY))
     }
 
+    /**
+     * Exchanges a saved refresh token for a new access+refresh token pair
+     * via Supabase's refresh_token grant. Called only when a request
+     * comes back 401 — see MainActivity.withTokenRefresh().
+     */
+    fun refreshToken(refreshToken: String): HttpResult {
+        val url = URL("${BuildConfig.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token")
+        val body = JSONObject().put("refresh_token", refreshToken).toString()
+        return postJson(url, body, extraHeaders = mapOf("apikey" to BuildConfig.SUPABASE_PUBLISHABLE_KEY))
+    }
+
     /** POST /api/agent/device/plan — the "brain" step. */
     fun requestPlan(accessToken: String, text: String): HttpResult {
         val url = URL("${BuildConfig.BACKEND_BASE_URL}/api/agent/device/plan")
