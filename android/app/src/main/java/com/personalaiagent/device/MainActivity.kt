@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var agentGroup: LinearLayout
     private lateinit var statusText: TextView
     private var accessToken: String? = null
+    private var refreshToken: String? = null
 
     private val micPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -39,11 +40,12 @@ class MainActivity : AppCompatActivity() {
         agentGroup = findViewById(R.id.agentGroup)
         statusText = findViewById(R.id.statusText)
 
-        // V0 stores the token in plain SharedPreferences for simplicity.
+        // V0 stores tokens in plain SharedPreferences for simplicity.
         // Known limitation — see README "Known limitations": harden with
         // androidx.security EncryptedSharedPreferences before anything
         // beyond local experimentation.
         accessToken = prefs.getString("access_token", null)
+        refreshToken = prefs.getString("refresh_token", null)
         if (accessToken != null) showAgentUi()
 
         findViewById<Button>(R.id.loginButton).setOnClickListener { handleLogin() }
@@ -65,18 +67,13 @@ class MainActivity : AppCompatActivity() {
             val result = BackendClient.signIn(email, password)
             runOnUiThread {
                 if (result.statusCode in 200..299) {
-                    val token = try {
-                        JSONObject(result.body).optString("access_token").takeIf { it.isNotBlank() }
-                    } catch (e: Exception) {
-                        null
-                    }
-                    if (token != null) {
-                        accessToken = token
-                        prefs.edit().putString("access_token", token).apply()
+                    val tokens = extractTokens(result.body)
+                    if (tokens != null) {
+                        saveTokens(tokens.first, tokens.second)
                         showAgentUi()
                         setStatus("Signed in. Enable accessibility, then try a command.")
                     } else {
-                        setStatus("Signed in, but no access token was returned.")
+                        setStatus("Signed in, but no access/refresh token was returned.")
                     }
                 } else {
                     val errorMsg = parseErrorResponse(result.body) ?: "Sign-in failed (${result.statusCode})."
@@ -86,9 +83,70 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    /** Pulls {access_token, refresh_token} out of a Supabase auth
+     *  response. Never logs either value — only returns them in memory. */
+    private fun extractTokens(json: String): Pair<String, String>? {
+        return try {
+            val obj = JSONObject(json)
+            val access = obj.optString("access_token").takeIf { it.isNotBlank() }
+            val refresh = obj.optString("refresh_token").takeIf { it.isNotBlank() }
+            if (access != null && refresh != null) Pair(access, refresh) else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun saveTokens(access: String, refresh: String) {
+        accessToken = access
+        refreshToken = refresh
+        prefs.edit().putString("access_token", access).putString("refresh_token", refresh).apply()
+    }
+
+    private fun clearTokens() {
+        accessToken = null
+        refreshToken = null
+        prefs.edit().remove("access_token").remove("refresh_token").apply()
+    }
+
     private fun showAgentUi() {
         loginGroup.visibility = LinearLayout.GONE
         agentGroup.visibility = LinearLayout.VISIBLE
+    }
+
+    private fun showLoginUi() {
+        loginGroup.visibility = LinearLayout.VISIBLE
+        agentGroup.visibility = LinearLayout.GONE
+    }
+
+    /**
+     * Runs [call] with the current access token. If the backend returns
+     * 401, tries exactly one token refresh and retries [call] once with
+     * the new token — never loops, never retries more than once. If the
+     * refresh itself fails, clears the saved session and switches the UI
+     * back to login — the user is never asked to clear app data.
+     * Must be called from a background thread (blocks on network I/O).
+     */
+    private fun withTokenRefresh(call: (token: String) -> HttpResult): HttpResult? {
+        val token = accessToken ?: return null
+        val first = call(token)
+        if (first.statusCode != 401) return first
+
+        val savedRefresh = refreshToken ?: return expireSession()
+        val refreshResult = BackendClient.refreshToken(savedRefresh)
+        if (refreshResult.statusCode !in 200..299) return expireSession()
+
+        val newTokens = extractTokens(refreshResult.body) ?: return expireSession()
+        saveTokens(newTokens.first, newTokens.second)
+        return call(newTokens.first)
+    }
+
+    private fun expireSession(): HttpResult? {
+        clearTokens()
+        runOnUiThread {
+            showLoginUi()
+            setStatus("Session expired. Please sign in again.")
+        }
+        return null
     }
 
     private fun onMicPressed() {
@@ -148,10 +206,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleRecognizedText(text: String) {
-        val token = accessToken ?: return setStatus("Not signed in.")
+        if (accessToken == null) return setStatus("Not signed in.")
         setStatus("Planning…")
         Thread {
-            val planResult = BackendClient.requestPlan(token, text)
+            val planResult = withTokenRefresh { token -> BackendClient.requestPlan(token, text) }
+                ?: return@Thread // session already expired and shown to the user
+
             if (planResult.statusCode !in 200..299) {
                 val message = parseErrorResponse(planResult.body) ?: "Couldn't plan that command (${planResult.statusCode})."
                 runOnUiThread { setStatus(message) }
@@ -168,19 +228,21 @@ class MainActivity : AppCompatActivity() {
             val service = DeviceAgentAccessibilityService.instance
             if (service == null) {
                 runOnUiThread { setStatus("Accessibility service isn't running — enable it in Settings.") }
-                reportOutcomeAsync(token, plan.intent, plan.summary, success = false, detail = "Accessibility service not running")
+                reportOutcomeAsync(plan.intent, plan.summary, success = false, detail = "Accessibility service not running")
                 return@Thread
             }
 
             service.executePlan(plan.steps) { success, message ->
                 runOnUiThread { setStatus(if (success) "Done: $message" else "Failed: $message") }
-                reportOutcomeAsync(token, plan.intent, plan.summary, success, message)
+                reportOutcomeAsync(plan.intent, plan.summary, success, message)
             }
         }.start()
     }
 
-    private fun reportOutcomeAsync(token: String, intent: String, summary: String, success: Boolean, detail: String) {
-        Thread { BackendClient.reportOutcome(token, intent, summary, success, detail) }.start()
+    private fun reportOutcomeAsync(intent: String, summary: String, success: Boolean, detail: String) {
+        Thread {
+            withTokenRefresh { token -> BackendClient.reportOutcome(token, intent, summary, success, detail) }
+        }.start()
     }
 
     /** Checks Settings.Secure directly rather than assuming — the user

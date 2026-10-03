@@ -87,8 +87,17 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
     private fun runStep(step: PlanStep): StepResult {
         return when (step.type) {
             "launch_app" -> launchApp(step.packageName ?: return StepResult(false, "launch_app: missing packageName"))
+            // Generic primitives — kept for reuse by future plans, but no
+            // longer used by the Chrome-search plan (see Bug 2 below).
             "wait_for_element" -> waitForElement(step.text ?: return StepResult(false, "wait_for_element: missing text"), step.timeoutMs)
             "tap_element" -> tapElement(step.text ?: return StepResult(false, "tap_element: missing text"))
+            // Semantic search-input primitives — replace blind
+            // findAccessibilityNodeInfosByText("Search") matching, which
+            // could match Chrome/Google's voice-search mic button (it
+            // also contains the word "Search" in its description) as
+            // easily as the actual text field.
+            "wait_for_search_input" -> waitForSearchInput(step.timeoutMs)
+            "focus_search_input" -> focusSearchInput()
             "type_text" -> typeIntoFocused(step.text ?: return StepResult(false, "type_text: missing text"))
             "submit" -> submitImeAction()
             "verify_contains" -> verifyContains(step.text ?: return StepResult(false, "verify_contains: missing text"), step.timeoutMs)
@@ -115,6 +124,88 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return null
         val matches = root.findAccessibilityNodeInfosByText(text) ?: return null
         return matches.firstOrNull { it.isVisibleToUser }
+    }
+
+    // ---------------- Semantic search-input finder (Bug 2 fix) ----------------
+    //
+    // Bug: findAccessibilityNodeInfosByText("Search") matches ANY node
+    // whose text/description contains the substring "Search" — on
+    // Chrome's New Tab Page that includes Google's voice-search mic
+    // icon (e.g. contentDescription "Voice Search"), so the old
+    // tap_element("Search") step would sometimes tap the mic instead of
+    // the actual text field.
+    //
+    // Fix: identify the field structurally via isEditable() instead of
+    // by matching text. A button (including the mic icon) is never
+    // editable, so this can't select it even if its label also contains
+    // the word "search". Note: AccessibilityNodeInfo.getHintText() is
+    // documented as unusable from inside an AccessibilityService, so
+    // disambiguating between multiple editable fields (rare, but
+    // possible) uses only contentDescription/text/viewIdResourceName —
+    // signals that ARE readable in-service — never hintText.
+
+    private fun collectEditableNodes(node: AccessibilityNodeInfo, out: MutableList<AccessibilityNodeInfo>) {
+        if (node.isEditable) out.add(node)
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectEditableNodes(child, out)
+        }
+    }
+
+    private fun findSearchInputNode(): AccessibilityNodeInfo? {
+        val root = rootInActiveWindow ?: return null
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        collectEditableNodes(root, candidates)
+        val visible = candidates.filter { it.isVisibleToUser }
+        if (visible.isEmpty()) return null
+        if (visible.size == 1) return visible.first()
+
+        // Multiple editable fields on screen (uncommon) — prefer one
+        // whose readable-in-service signals suggest "search"/"url", and
+        // explicitly exclude anything voice/microphone-flavored even if
+        // it were somehow editable.
+        fun signal(node: AccessibilityNodeInfo): String {
+            val desc = node.contentDescription?.toString()?.lowercase() ?: ""
+            val text = node.text?.toString()?.lowercase() ?: ""
+            val resId = node.viewIdResourceName?.lowercase() ?: ""
+            return "$desc $text $resId"
+        }
+        fun isMicLike(s: String) = s.contains("voice") || s.contains("microphone") || s.contains(" mic")
+        fun looksLikeSearch(s: String) = s.contains("search") || s.contains("url") || s.contains("omnibox")
+
+        val nonMic = visible.filterNot { isMicLike(signal(it)) }
+        return nonMic.firstOrNull { looksLikeSearch(signal(it)) } ?: nonMic.firstOrNull() ?: visible.first()
+    }
+
+    private fun waitForSearchInput(timeoutMs: Long): StepResult {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (findSearchInputNode() != null) return StepResult(true, "Search input appeared")
+            Thread.sleep(300)
+        }
+        return StepResult(false, "Timed out waiting for an editable search field to appear")
+    }
+
+    private fun focusSearchInput(): StepResult {
+        val node = findSearchInputNode() ?: return StepResult(false, "Couldn't find an editable search field")
+
+        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        // Also tap it (via the nearest clickable ancestor, same pattern
+        // as tapElement) so Chrome visually enters edit mode the way a
+        // real user's tap would, not just gains programmatic focus.
+        var target: AccessibilityNodeInfo? = node
+        while (target != null && !target.isClickable) {
+            target = target.parent
+        }
+        (target ?: node).performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        Thread.sleep(400) // let Chrome settle into edit mode before typing
+
+        val nowFocused = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (nowFocused != null) return StepResult(true, "Focused the search field")
+
+        // Last-resort fallback: a real tap gesture at the node's actual
+        // on-screen bounds — never a hardcoded/guessed coordinate.
+        return tapByCoordinates(node)
     }
 
     private fun waitForElement(text: String, timeoutMs: Long): StepResult {
@@ -178,7 +269,7 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return StepResult(false, "No active window to submit from")
         val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
             ?: return StepResult(false, "No focused field to submit")
-        val submitted = focused.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+        val submitted = focused.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)
         return if (submitted) StepResult(true, "Submitted")
         else StepResult(false, "The focused field didn't accept a submit action")
     }
