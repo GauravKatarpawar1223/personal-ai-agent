@@ -10,8 +10,18 @@
 
 export type DeviceStepType =
   | "launch_app"
+  // Generic text-match primitives — kept for potential reuse by future
+  // plans, but NOT used by the Chrome-search plan below anymore (see
+  // wait_for_search_input/focus_search_input). Bug: matching literal
+  // text like "Search" can hit Chrome/Google's voice-search mic button,
+  // since its contentDescription also contains the word "Search".
   | "wait_for_element"
   | "tap_element"
+  // Semantic primitives: identify the actual editable search field by
+  // structure (AccessibilityNodeInfo.isEditable), not by text — a mic
+  // button is never editable, so these can't select it.
+  | "wait_for_search_input"
+  | "focus_search_input"
   | "type_text"
   | "submit"
   | "verify_contains"
@@ -54,8 +64,9 @@ export function parseDeviceCommand(text: string): DevicePlan | null {
     targetPackage: "com.android.chrome",
     steps: [
       { type: "launch_app", packageName: "com.android.chrome" },
-      { type: "wait_for_element", text: "Search", timeoutMs: 6000 },
-      { type: "tap_element", text: "Search" },
+      // Semantic, not text-matched — see DeviceStepType above for why.
+      { type: "wait_for_search_input", timeoutMs: 6000 },
+      { type: "focus_search_input" },
       { type: "type_text", text: query },
       { type: "submit" },
       // Best-effort verification, not a guarantee: Google's results page
