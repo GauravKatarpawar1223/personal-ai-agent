@@ -282,6 +282,44 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
             if (findByText(text) != null) return StepResult(true, "Verified: \"$text\" is on screen")
             Thread.sleep(400)
         }
-        return StepResult(false, "Could not verify \"$text\" appeared on screen")
+                return StepResult(false, "Could not verify \"$text\" appeared on screen")
     }
+
+    fun observeScreen(): ScreenObservation {
+        val root = rootInActiveWindow
+            ?: return ScreenObservation(
+                packageName = null,
+                elements = emptyList()
+            )
+
+        val elements = mutableListOf<ScreenElement>()
+
+        fun collect(node: AccessibilityNodeInfo) {
+            if (node.isVisibleToUser) {
+                elements.add(
+                    ScreenElement(
+                        text = node.text?.toString(),
+                        contentDescription = node.contentDescription?.toString(),
+                        className = node.className?.toString(),
+                        viewId = node.viewIdResourceName,
+                        editable = node.isEditable,
+                        clickable = node.isClickable,
+                        visible = node.isVisibleToUser
+                    )
+                )
+            }
+
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                collect(child)
+            }
+        }
+
+        collect(root)
+
+        return ScreenObservation(
+            packageName = root.packageName?.toString(),
+            elements = elements
+        )
+    }    
 }
