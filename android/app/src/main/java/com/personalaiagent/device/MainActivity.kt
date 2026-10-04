@@ -263,8 +263,12 @@ private fun testScreenObservation() {
             }
 
             service.executePlan(plan.steps) { success, message ->
-                runOnUiThread { setStatus(if (success) "Done: $message" else "Failed: $message") }
-                reportOutcomeAsync(plan.intent, plan.summary, success, message)
+    runOnUiThread { setStatus(if (success) "Done: $message" else "Failed: $message") }
+    reportOutcomeAsync(plan.intent, plan.summary, success, message)
+
+    if (success) {
+        testScreenObservation()
+    }
             }
         }.start()
     }
