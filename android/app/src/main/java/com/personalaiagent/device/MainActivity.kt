@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -25,6 +26,30 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private var accessToken: String? = null
     private var refreshToken: String? = null
+    private fun testScreenObservation() {
+    val observation = DeviceAgentAccessibilityService.instance?.observeScreen()
+
+    if (observation == null) {
+        Log.w("DeviceAgent", "Screen observation unavailable")
+        return
+    }
+
+    Log.i(
+        "DeviceAgent",
+        "Observed package=${observation.packageName}, elements=${observation.elements.size}"
+    )
+
+    observation.elements.take(20).forEachIndexed { index, element ->
+        Log.i(
+            "DeviceAgent",
+            "Element[$index] text=${element.text}, " +
+                "description=${element.contentDescription}, " +
+                "class=${element.className}, " +
+                "editable=${element.editable}, " +
+                "clickable=${element.clickable}"
+        )
+    } 
+    }
 
     private val micPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
