@@ -53,6 +53,42 @@ object BackendClient {
             .toString()
         return postJson(url, body, extraHeaders = mapOf("Authorization" to "Bearer $accessToken"))
     }
+        /** POST /api/agent/device/observe — sends the current screen observation to the backend. */
+    fun sendScreenObservation(
+        accessToken: String,
+        packageName: String?,
+        elements: List<ScreenElement>
+    ): HttpResult {
+        val url = URL("${BuildConfig.BACKEND_BASE_URL}/api/agent/device/observe")
+
+        val elementsArray = org.json.JSONArray()
+
+        for (element in elements) {
+            val obj = JSONObject()
+                .put("text", element.text)
+                .put("contentDescription", element.contentDescription)
+                .put("className", element.className)
+                .put("viewId", element.viewId)
+                .put("editable", element.editable)
+                .put("clickable", element.clickable)
+                .put("visible", element.visible)
+
+            elementsArray.put(obj)
+        }
+
+        val body = JSONObject()
+            .put("packageName", packageName)
+            .put("elements", elementsArray)
+            .toString()
+
+        return postJson(
+            url,
+            body,
+            extraHeaders = mapOf(
+                "Authorization" to "Bearer $accessToken"
+            )
+        )
+    }
 
     private fun postJson(url: URL, jsonBody: String, extraHeaders: Map<String, String>): HttpResult {
         val connection = url.openConnection() as HttpURLConnection
