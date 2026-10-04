@@ -26,7 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private var accessToken: String? = null
     private var refreshToken: String? = null
-    private fun testScreenObservation() {
+private fun testScreenObservation() {
     val observation = DeviceAgentAccessibilityService.instance?.observeScreen()
 
     if (observation == null) {
@@ -34,22 +34,27 @@ class MainActivity : AppCompatActivity() {
         return
     }
 
-    Log.i(
-        "DeviceAgent",
-        "Observed package=${observation.packageName}, elements=${observation.elements.size}"
-    )
+    val token = accessToken
+    if (token == null) {
+        Log.w("DeviceAgent", "No access token available")
+        return
+    }
 
-    observation.elements.take(20).forEachIndexed { index, element ->
+    Thread {
+        val result = withTokenRefresh { currentToken ->
+            BackendClient.sendScreenObservation(
+                accessToken = currentToken,
+                packageName = observation.packageName,
+                elements = observation.elements
+            )
+        }
+
         Log.i(
             "DeviceAgent",
-            "Element[$index] text=${element.text}, " +
-                "description=${element.contentDescription}, " +
-                "class=${element.className}, " +
-                "editable=${element.editable}, " +
-                "clickable=${element.clickable}"
+            "Screen observation sent: status=${result?.statusCode}, body=${result?.body}"
         )
-    } 
-    }
+    }.start()
+}
 
     private val micPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
