@@ -67,19 +67,37 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
      * — it never continues past a step it couldn't verify, and never
      * reports success unless the whole sequence actually completed.
      */
-    fun executePlan(steps: List<PlanStep>, onResult: (Boolean, String) -> Unit) {
-        Thread {
-            var lastMessage = "No steps to run."
-            var success = false
-            for (step in steps) {
-                val result = runStep(step)
-                lastMessage = result.message
-                success = result.success
-                Log.i(TAG, "Step ${step.type}: success=$success message=$lastMessage")
-                if (!success) break
+    fun executePlan(
+    steps: List<PlanStep>,
+    onResult: (Boolean, String) -> Unit,
+    onStepCompleted: ((PlanStep, StepResult) -> Unit)? = null
+) {
+    Thread {
+        var lastMessage = "No steps to run."
+        var success = false
+
+        for (step in steps) {
+            val result = runStep(step)
+
+            lastMessage = result.message
+            success = result.success
+
+            Log.i(
+                TAG,
+                "Step ${step.type}: success=$success message=$lastMessage"
+            )
+
+            if (success) {
+                onStepCompleted?.invoke(step, result)
             }
-            mainHandler.post { onResult(success, lastMessage) }
-        }.start()
+
+            if (!success) break
+        }
+
+        mainHandler.post {
+            onResult(success, lastMessage)
+        }
+    }.start()
     }
 
     private data class StepResult(val success: Boolean, val message: String)
