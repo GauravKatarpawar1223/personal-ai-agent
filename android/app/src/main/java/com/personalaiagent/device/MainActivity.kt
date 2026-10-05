@@ -262,27 +262,28 @@ private fun testScreenObservation() {
                 return@Thread
             }
 
-            service.executePlan(
-    steps = plan.steps,
-    onResult = { success, message ->
-        runOnUiThread {
-            setStatus(
-                if (success) "Done: $message"
-                else "Failed: $message"
+                        service.executePlan(
+                steps = plan.steps,
+                onResult = { success, message ->
+                    runOnUiThread {
+                        setStatus(
+                            if (success) "Done: $message"
+                            else "Failed: $message"
+                        )
+                    }
+
+                    reportOutcomeAsync(
+                        plan.intent,
+                        plan.summary,
+                        success,
+                        message
+                    )
+                },
+                onStepCompleted = { _, _ ->
+                    testScreenObservation()
+                }
             )
         }
-
-        reportOutcomeAsync(
-            plan.intent,
-            plan.summary,
-            success,
-            message
-        )
-    },
-    onStepCompleted = { _, _ ->
-        testScreenObservation()
-    }
-)
     }
 
     private fun reportOutcomeAsync(intent: String, summary: String, success: Boolean, detail: String) {
