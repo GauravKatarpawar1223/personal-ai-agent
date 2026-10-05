@@ -100,7 +100,7 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
     }.start()
     }
 
-    private data class StepResult(val success: Boolean, val message: String)
+    data class StepResult(val success: Boolean, val message: String)
 
     private fun runStep(step: PlanStep): StepResult {
         return when (step.type) {
