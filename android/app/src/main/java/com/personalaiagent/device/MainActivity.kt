@@ -283,7 +283,7 @@ private fun testScreenObservation() {
                     testScreenObservation()
                 }
             )
-        }
+        }.start()
     }
 
     private fun reportOutcomeAsync(intent: String, summary: String, success: Boolean, detail: String) {
