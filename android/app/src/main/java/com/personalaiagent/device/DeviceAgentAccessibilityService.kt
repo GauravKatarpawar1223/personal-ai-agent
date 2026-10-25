@@ -105,10 +105,11 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
     private fun runStep(step: PlanStep): StepResult {
         return when (step.type) {
             
-"launch_app" -> launchApp(
-    step.packageName ?: return StepResult(
+"launch_app" -> launchAppOrUrl(
+    step.packageName,
+    step.text ?: return StepResult(
         false,
-        "launch_app: missing packageName"
+        "launch_app: missing fallback URL"
     )
 )
 
@@ -400,4 +401,10 @@ private fun openFallbackUrl(url: String): StepResult {
             elements = elements
         )
     }    
+
+private fun findByText(text: String): AccessibilityNodeInfo? {
+    val root = rootInActiveWindow ?: return null
+    val nodes = root.findAccessibilityNodeInfosByText(text.trim())
+    return nodes.firstOrNull()
+}
 }
