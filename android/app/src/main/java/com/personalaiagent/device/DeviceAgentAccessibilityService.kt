@@ -105,11 +105,11 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
     private fun runStep(step: PlanStep): StepResult {
         return when (step.type) {
             
-"launch_app" -> launchAppOrUrl(
-    step.packageName,
-    step.text ?: return StepResult(
+
+"launch_app" -> launchApp(
+    step.packageName ?: return StepResult(
         false,
-        "launch_app: missing fallback URL"
+        "launch_app: missing packageName"
     )
 )
 
@@ -144,6 +144,20 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
     }
 
     // ---------------- Reusable primitives ----------------
+
+private fun launchApp(packageName: String): StepResult {
+    return try {
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+            ?: return StepResult(false, "$packageName is not installed")
+
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+        Thread.sleep(1200)
+        StepResult(true, "Launched $packageName")
+    } catch (e: Exception) {
+        StepResult(false, "Couldn't launch $packageName: ${e.message}")
+    }
+}
 
 private fun launchAppOrUrl(
     packageName: String?,
