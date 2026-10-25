@@ -104,7 +104,22 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
 
     private fun runStep(step: PlanStep): StepResult {
         return when (step.type) {
-            "launch_app" -> launchApp(step.packageName ?: return StepResult(false, "launch_app: missing packageName"))
+            
+"launch_app" -> launchApp(
+    step.packageName ?: return StepResult(
+        false,
+        "launch_app: missing packageName"
+    )
+)
+
+"launch_app_or_url" -> launchAppOrUrl(
+    step.packageName,
+    step.text ?: return StepResult(
+        false,
+        "launch_app_or_url: missing fallback URL"
+    )
+)
+
             // Generic primitives — kept for reuse by future plans, but no
             // longer used by the Chrome-search plan (see Bug 2 below).
             "wait_for_element" -> waitForElement(step.text ?: return StepResult(false, "wait_for_element: missing text"), step.timeoutMs)
@@ -129,21 +144,66 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
 
     // ---------------- Reusable primitives ----------------
 
-    private fun launchApp(packageName: String): StepResult {
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            ?: return StepResult(false, "$packageName is not installed")
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        startActivity(launchIntent)
-        Thread.sleep(1200) // give the app time to come to the foreground
-        return StepResult(true, "Launched $packageName")
+private fun launchAppOrUrl(
+    packageName: String?,
+    fallbackUrl: String
+): StepResult {
+    if (!packageName.isNullOrBlank()) {
+        val launchIntent =
+            packageManager.getLaunchIntentForPackage(packageName)
+
+        if (launchIntent != null) {
+            return try {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launchIntent)
+                Thread.sleep(1200)
+                StepResult(true, "Opened app: $packageName")
+            } catch (e: Exception) {
+                openFallbackUrl(fallbackUrl)
+            }
+        }
     }
 
-    private fun findByText(text: String): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
-        val matches = root.findAccessibilityNodeInfosByText(text) ?: return null
-        return matches.firstOrNull { it.isVisibleToUser }
+    return openFallbackUrl(fallbackUrl)
+}
+
+private fun openFallbackUrl(url: String): StepResult {
+    if (!url.startsWith("https://", ignoreCase = true)) {
+        return StepResult(
+            false,
+            "Only HTTPS fallback URLs are allowed"
+        )
     }
 
+    return try {
+        val intent = Intent(
+            Intent.ACTION_VIEW,
+            android.net.Uri.parse(url)
+        ).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            setPackage("com.android.chrome")
+        }
+
+        try {
+            startActivity(intent)
+        } catch (e: android.content.ActivityNotFoundException) {
+            val browserIntent = Intent(
+                Intent.ACTION_VIEW,
+                android.net.Uri.parse(url)
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(browserIntent)
+        }
+
+        Thread.sleep(1000)
+        StepResult(true, "Opened fallback website in browser")
+    } catch (e: Exception) {
+        StepResult(false, "Couldn't open app or website")
+    }
+}
+
+    
     // ---------------- Semantic search-input finder (Bug 2 fix) ----------------
     //
     // Bug: findAccessibilityNodeInfosByText("Search") matches ANY node
