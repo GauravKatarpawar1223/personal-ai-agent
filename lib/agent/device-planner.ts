@@ -1,25 +1,13 @@
 /**
- * V0 device planner. Deliberately tiny and deliberately NOT a general
- * planner — this is the "smallest safe V0" the product spec asked for,
- * not a duplicate of the web app's agent brain. It recognizes exactly
- * one intent (open Chrome, search Google) and returns a fixed sequence
- * of generic device primitives for the Android AccessibilityService to
- * execute. Anything it doesn't recognize returns null — the Android app
- * must report that honestly, never guess a plan.
+ * Personal AI Agent — deterministic device planner.
+ * Preserve Google Search and support opening common Android apps.
+ * Unsupported commands return null instead of guessing.
  */
 
 export type DeviceStepType =
   | "launch_app"
-  // Generic text-match primitives — kept for potential reuse by future
-  // plans, but NOT used by the Chrome-search plan below anymore (see
-  // wait_for_search_input/focus_search_input). Bug: matching literal
-  // text like "Search" can hit Chrome/Google's voice-search mic button,
-  // since its contentDescription also contains the word "Search".
   | "wait_for_element"
   | "tap_element"
-  // Semantic primitives: identify the actual editable search field by
-  // structure (AccessibilityNodeInfo.isEditable), not by text — a mic
-  // button is never editable, so these can't select it.
   | "wait_for_search_input"
   | "focus_search_input"
   | "type_text"
@@ -29,8 +17,6 @@ export type DeviceStepType =
 
 export interface DeviceStep {
   type: DeviceStepType;
-  /** Text to search for (wait_for_element/tap_element/verify_contains)
-   *  or to type (type_text). */
   text?: string;
   packageName?: string;
   timeoutMs?: number;
@@ -40,40 +26,130 @@ export interface DevicePlan {
   intent: string;
   targetPackage: string;
   steps: DeviceStep[];
-  /** Human-readable summary, shown to the user before/while executing
-   *  and used as the activity-log action text. */
   summary: string;
 }
 
-// Matches: "Chrome kholo aur Google par AI agent search karo",
-// "Google pe AI agents ke baare mein search kar", etc. — "par"/"pe"/"per"
-// are the Hinglish variants of "on", "ke baare mein" is optional ("about").
 const GOOGLE_SEARCH_PATTERN =
   /google\s+(?:par|pe|per)\s+(.+?)(?:\s+ke\s+baare\s+mein)?\s+search\s+kar[oe]?\.?\s*$/i;
 
+const APP_ALIASES: Array<{
+  pattern: RegExp;
+  appName: string;
+  packageName: string;
+}> = [
+  {
+    pattern: /youtube/i,
+    appName: "YouTube",
+    packageName: "com.google.android.youtube",
+  },
+  {
+    pattern: /whatsapp|what'?s\s*app/i,
+    appName: "WhatsApp",
+    packageName: "com.whatsapp",
+  },
+  {
+    pattern: /settings|setting|सेटिंग्स?/i,
+    appName: "Settings",
+    packageName: "com.android.settings",
+  },
+  {
+    pattern: /calculator|कैलकुलेटर/i,
+    appName: "Calculator",
+    packageName: "com.google.android.calculator",
+  },
+  {
+    pattern: /gmail|जीमेल/i,
+    appName: "Gmail",
+    packageName: "com.google.android.gm",
+  },
+  {
+    pattern: /google\s+maps|maps|मैप्स/i,
+    appName: "Google Maps",
+    packageName: "com.google.android.apps.maps",
+  },
+  {
+    pattern: /chrome|क्रोम/i,
+    appName: "Chrome",
+    packageName: "com.android.chrome",
+  },
+];
+
+const OPEN_APP_COMMAND_PATTERN =
+  /^(?:(?:please|bhai)\s+)?(?:(?:open|launch|start|khol|kholo|kholna|chalao|chalu\s+kar(?:o)?)\s+(.+?)|(.+?)\s+(?:open\s+kar(?:o)?|khol(?:o)?|chalao|start\s+kar(?:o)?))\s*[.!]?$/i;
+
 export function parseDeviceCommand(text: string): DevicePlan | null {
   const trimmed = text.trim();
+
   if (!trimmed) return null;
 
-  const match = trimmed.match(GOOGLE_SEARCH_PATTERN);
-  const query = match?.[1]?.trim();
-  if (!query) return null;
+  // 1. Keep the existing Google Search flow working.
+  const searchMatch = trimmed.match(GOOGLE_SEARCH_PATTERN);
+  const query = searchMatch?.[1]?.trim();
 
-  return {
-    intent: "device.chrome_google_search",
-    targetPackage: "com.android.chrome",
-    steps: [
-      { type: "launch_app", packageName: "com.android.chrome" },
-      // Semantic, not text-matched — see DeviceStepType above for why.
-      { type: "wait_for_search_input", timeoutMs: 6000 },
-      { type: "focus_search_input" },
-      { type: "type_text", text: query },
-      { type: "submit" },
-      // Best-effort verification, not a guarantee: Google's results page
-      // echoes the query back, so finding it on screen after submit is
-      // reasonable (not perfect) evidence the search actually happened.
-      { type: "verify_contains", text: query, timeoutMs: 5000 },
-    ],
-    summary: `Search Google for "${query}" in Chrome`,
-  };
+  if (query) {
+    return {
+      intent: "device.chrome_google_search",
+      targetPackage: "com.android.chrome",
+      steps: [
+        {
+          type: "launch_app",
+          packageName: "com.android.chrome",
+        },
+        {
+          type: "wait_for_search_input",
+          timeoutMs: 6000,
+        },
+        {
+          type: "focus_search_input",
+        },
+        {
+          type: "type_text",
+          text: query,
+        },
+        {
+          type: "submit",
+        },
+        {
+          type: "verify_contains",
+          text: query,
+          timeoutMs: 5000,
+        },
+      ],
+      summary: `Search Google for "${query}" in Chrome`,
+    };
+  }
+
+  // 2. Open a supported Android app by voice command.
+  const openMatch = trimmed.match(OPEN_APP_COMMAND_PATTERN);
+
+  const requestedApp = (
+    openMatch?.[1] ??
+    openMatch?.[2] ??
+    ""
+  ).trim();
+
+  if (requestedApp) {
+    const alias = APP_ALIASES.find((candidate) =>
+      candidate.pattern.test(requestedApp)
+    );
+
+    if (!alias) return null;
+
+    return {
+      intent: `device.open_app.${alias.appName
+        .toLowerCase()
+        .replace(/\s+/g, "_")}`,
+      targetPackage: alias.packageName,
+      steps: [
+        {
+          type: "launch_app",
+          packageName: alias.packageName,
+        },
+      ],
+      summary: `Open ${alias.appName}`,
+    };
+  }
+
+  // 3. Never invent a plan for a command we don't understand.
+  return null;
 }
