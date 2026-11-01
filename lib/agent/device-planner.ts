@@ -1,12 +1,13 @@
 /**
  * Personal AI Agent — deterministic device planner.
- * Keeps Google Search working and supports direct-app launch with
- * a Chrome fallback for missing apps and unlisted app/service names.
+ * Preserves Google Search and known app launching.
+ * Adds dynamic installed-app lookup by visible app label.
  */
 
 export type DeviceStepType =
   | "launch_app"
   | "launch_app_or_url"
+  | "launch_app_by_label"
   | "wait_for_element"
   | "tap_element"
   | "wait_for_search_input"
@@ -97,57 +98,97 @@ function makeSearchPlan(query: string): DevicePlan {
     intent: "device.chrome_google_search",
     targetPackage: "com.android.chrome",
     steps: [
-      { type: "launch_app", packageName: "com.android.chrome" },
-      { type: "wait_for_search_input", timeoutMs: 6000 },
-      { type: "focus_search_input" },
-      { type: "type_text", text: query },
-      { type: "submit" },
-      { type: "verify_contains", text: query, timeoutMs: 5000 },
+      {
+        type: "launch_app",
+        packageName: "com.android.chrome",
+      },
+      {
+        type: "wait_for_search_input",
+        timeoutMs: 6000,
+      },
+      {
+        type: "focus_search_input",
+      },
+      {
+        type: "type_text",
+        text: query,
+      },
+      {
+        type: "submit",
+      },
+      {
+        type: "verify_contains",
+        text: query,
+        timeoutMs: 5000,
+      },
     ],
     summary: `Search Google for "${query}" in Chrome`,
   };
 }
 
-export function parseDeviceCommand(text: string): DevicePlan | null {
+export function parseDeviceCommand(
+  text: string
+): DevicePlan | null {
   const trimmed = text.trim();
+
   if (!trimmed) return null;
 
+  // Keep the existing Google Search command working.
   const searchMatch = trimmed.match(GOOGLE_SEARCH_PATTERN);
   const query = searchMatch?.[1]?.trim();
-  if (query) return makeSearchPlan(query);
 
+  if (query) {
+    return makeSearchPlan(query);
+  }
+
+  // Detect app-opening commands.
   const openMatch = trimmed.match(OPEN_COMMAND);
-  const requested = (openMatch?.[1] ?? openMatch?.[2] ?? "")
+
+  const requested = (
+    openMatch?.[1] ?? openMatch?.[2] ?? ""
+  )
     .trim()
     .replace(/[.!?]+$/, "")
     .trim();
 
-  if (!requested || requested.length > 80) return null;
+  if (!requested || requested.length > 80) {
+    return null;
+  }
 
-  const alias = APP_ALIASES.find((app) => app.pattern.test(requested));
-  const appName = alias?.appName ?? requested;
+  // Preserve the existing known-app behaviour.
+  const alias = APP_ALIASES.find((app) =>
+    app.pattern.test(requested)
+  );
 
-  // Known apps launch directly when installed. If not installed,
-  // Android opens the fallback URL in Chrome.
-  // Unknown names go to a Google search in Chrome instead of guessing
-  // a package name or claiming that an app was opened.
-  const fallbackUrl = alias?.url ??
-    `https://www.google.com/search?q=${encodeURIComponent(appName)}`;
+  if (alias) {
+    return {
+      intent: `device.open_app.${alias.appName
+        .toLowerCase()
+        .replace(/\s+/g, "_")}`,
+      targetPackage: alias.packageName,
+      steps: [
+        {
+          type: "launch_app_or_url",
+          packageName: alias.packageName,
+          text: alias.url,
+        },
+      ],
+      summary:
+        `Open ${alias.appName}; use browser fallback if unavailable`,
+    };
+  }
 
+  // Unknown app names are searched among installed launcher apps
+  // by Android, instead of guessing a package name.
   return {
-    intent: alias
-      ? `device.open_app.${appName.toLowerCase().replace(/\s+/g, "_")}`
-      : "device.search_for_app_or_service",
-    targetPackage: alias?.packageName ?? "com.android.chrome",
+    intent: "device.dynamic_app_lookup",
+    targetPackage: "com.android.chrome",
     steps: [
       {
-        type: "launch_app_or_url",
-        packageName: alias?.packageName,
-        text: fallbackUrl,
+        type: "launch_app_by_label",
+        text: requested,
       },
     ],
-    summary: alias
-      ? `Open ${appName}; use Chrome if it isn't installed`
-      : `Search Chrome for "${appName}"`,
+    summary: `Find and open installed app "${requested}"`,
   };
 }
