@@ -717,7 +717,12 @@ class DeviceAgentAccessibilityService : AccessibilityService() {
             }
         }
 
-        collect(root)
+              collect(root)
 
-        return ScreenObservation(
+      return ScreenObservation(
+          packageName = root.packageName?.toString(),
+          elements = elements
+      )
+  }
+}
     
