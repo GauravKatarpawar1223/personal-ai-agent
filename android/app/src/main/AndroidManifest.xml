@@ -4,12 +4,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Android 11+ package-visibility: explicitly declares we look up
-         and launch Chrome by package name. Deliberately scoped to just
-         this one package rather than QUERY_ALL_PACKAGES, which Play
-         policy heavily restricts and V0 doesn't need anyway. -->
     <queries>
         <package android:name="com.android.chrome" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.android.settings" />
+        <package android:name="com.google.android.calculator" />
+        <package android:name="com.google.android.gm" />
+        <package android:name="com.google.android.apps.maps" />
     </queries>
 
     <application
@@ -26,25 +29,20 @@
             </intent-filter>
         </activity>
 
-        <!--
-          The V0 device-execution engine. android:exported="true" is
-          required for any AccessibilityService (the system binds to it
-          from outside the app's process); android:permission restricts
-          binding to the system itself, so no other app can bind to it.
-          The user must still explicitly enable this service in
-          Settings > Accessibility — nothing here does that automatically.
-        -->
         <service
             android:name=".DeviceAgentAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true"
             android:label="@string/accessibility_service_label">
+
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
+
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
     </application>
 </manifest>
